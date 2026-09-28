@@ -7,6 +7,7 @@ export async function api(path, method = 'GET', body) {
   const data = await response.json()
   if (!response.ok) {
     const error = new Error(data.detail || '请求失败，请稍后重试')
+    error.status = response.status
     error.workspaces = data.workspaces
     throw error
   }

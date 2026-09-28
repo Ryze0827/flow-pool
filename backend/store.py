@@ -1,4 +1,5 @@
 import json
+import hmac
 import os
 import sqlite3
 import time
@@ -6,6 +7,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
+from .auth import hash_password, new_session_token, session_digest, verify_password
 from .models import MailSettings, Settings
 
 
@@ -58,6 +60,15 @@ class Store:
             CREATE TABLE IF NOT EXISTS account_recovery (
                 account_id INTEGER PRIMARY KEY, payload TEXT NOT NULL, updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS admin_credentials (
+                id INTEGER PRIMARY KEY CHECK (id=1), username TEXT NOT NULL,
+                password_hash TEXT NOT NULL, updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+                token_hash TEXT PRIMARY KEY, username TEXT NOT NULL,
+                created_at REAL NOT NULL, expires_at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at);
         ''')
         # 兼容已有数据库，达限计数独立持久化，不依赖巡检日志保留数量。
         for table, columns in {
@@ -80,6 +91,47 @@ class Store:
                     self.db.execute("UPDATE accounts SET cooldown_count=1 WHERE resume_at IS NOT NULL AND state IN ('cooldown', 'resuming')")
         self.db.commit()
 
+    def bootstrap_admin(self, username, password, reset=False):
+        if not username or not password:
+            return False
+        row = self.db.execute('SELECT 1 FROM admin_credentials WHERE id=1').fetchone()
+        if not row or reset:
+            self.db.execute('INSERT OR REPLACE INTO admin_credentials VALUES (1, ?, ?, ?)',
+                            (username, hash_password(password), time.time()))
+            self.db.execute('DELETE FROM auth_sessions')
+            self.db.commit()
+        return True
+
+    def admin_configured(self):
+        return self.db.execute('SELECT 1 FROM admin_credentials WHERE id=1').fetchone() is not None
+
+    def authenticate_admin(self, username, password):
+        row = self.db.execute('SELECT username, password_hash FROM admin_credentials WHERE id=1').fetchone()
+        return bool(row and hmac.compare_digest(str(username), str(row['username'])) and verify_password(password, row['password_hash']))
+
+    def create_session(self, username, ttl):
+        token = new_session_token()
+        now = time.time()
+        self.db.execute('DELETE FROM auth_sessions WHERE expires_at<=?', (now,))
+        self.db.execute('INSERT INTO auth_sessions VALUES (?, ?, ?, ?)',
+                        (session_digest(token), username, now, now + ttl))
+        self.db.commit()
+        return token, now + ttl
+
+    def session(self, token):
+        if not token:
+            return None
+        now = time.time()
+        row = self.db.execute('SELECT username, expires_at FROM auth_sessions WHERE token_hash=? AND expires_at>? ',
+                              (session_digest(token), now)).fetchone()
+        self.db.execute('DELETE FROM auth_sessions WHERE expires_at<=?', (now,))
+        self.db.commit()
+        return dict(row) if row else None
+
+    def delete_session(self, token):
+        if token:
+            self.db.execute('DELETE FROM auth_sessions WHERE token_hash=?', (session_digest(token),))
+            self.db.commit()
     def seal(self, value):
         return self.cipher.encrypt(json.dumps(value, ensure_ascii=False).encode()).decode()
 

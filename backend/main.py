@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,13 +16,14 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, Settings
+from .models import AdminLogin, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
 from .sub2api import Sub2API, UpstreamError, public_account
 from .scheduler import expiry_timestamp
 from . import updater
+from .auth import SESSION_TTL_SECONDS
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('SCHEDULER_DATA_DIR', ROOT / 'data'))
@@ -44,6 +45,8 @@ async def lifespan(app):
     except BlockingIOError:
         raise RuntimeError('已有调度进程使用此数据库；请勿启动多个 worker') from None
     store = Store(DATA)
+    store.bootstrap_admin(os.environ.get('FLOWPOOL_ADMIN_USER', ''), os.environ.get('FLOWPOOL_ADMIN_PASSWORD', ''),
+                          reset=os.environ.get('FLOWPOOL_ADMIN_RESET') == '1')
     mailer = Mailer(store)
     scheduler = Scheduler(store, mailer)
     importer = Importer(store, scheduler)
@@ -73,11 +76,16 @@ async def lifespan(app):
 
 
 app = FastAPI(title='GPT 账号调控', lifespan=lifespan, docs_url=None, redoc_url=None)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=['localhost', '127.0.0.1', '[::1]', 'testserver'])
+allowed_hosts = [item.strip() for item in os.environ.get('FLOWPOOL_ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1],testserver').split(',') if item.strip()]
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 
 @app.middleware('http')
 async def local_security(request: Request, call_next):
+    public_api = {'/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/logout'}
+    if request.url.path.startswith('/api/') and request.url.path not in public_api:
+        if not store or not store.session(request.cookies.get('flowpool_session')):
+            return JSONResponse({'detail': '请先登录'}, status_code=401)
     if request.url.path.startswith('/api/') and request.method != 'GET':
         origin = request.headers.get('origin')
         if request.headers.get('x-scheduler-request') != '1' or (origin and urlsplit(origin).netloc != request.headers.get('host')):
@@ -118,6 +126,33 @@ async def validation_error(request, error):
 @app.get('/api/health')
 async def health():
     return {'ok': True, 'service': 'gpt-account-scheduler', 'pid': os.getpid(), 'instance': os.environ.get('FLOWPOOL_INSTANCE_ID', '')}
+
+
+@app.get('/api/auth/status')
+async def auth_status(request: Request):
+    session = store.session(request.cookies.get('flowpool_session'))
+    return {'configured': store.admin_configured(), 'authenticated': bool(session),
+            'username': session['username'] if session else ''}
+
+
+@app.post('/api/auth/login')
+async def auth_login(value: AdminLogin, request: Request, response: Response):
+    if not store.admin_configured():
+        raise HTTPException(503, '管理员尚未配置，请设置 FLOWPOOL_ADMIN_USER 和 FLOWPOOL_ADMIN_PASSWORD 后重启服务')
+    if not store.authenticate_admin(value.username, value.password):
+        raise HTTPException(401, '管理员账号或密码错误')
+    token, expires_at = store.create_session(value.username, SESSION_TTL_SECONDS)
+    forwarded_proto = request.headers.get('x-forwarded-proto', request.url.scheme)
+    response.set_cookie('flowpool_session', token, max_age=SESSION_TTL_SECONDS, httponly=True,
+                        secure=forwarded_proto == 'https', samesite='lax', path='/')
+    return {'ok': True, 'username': value.username, 'expires_at': expires_at}
+
+
+@app.post('/api/auth/logout')
+async def auth_logout(request: Request, response: Response):
+    store.delete_session(request.cookies.get('flowpool_session'))
+    response.delete_cookie('flowpool_session', path='/')
+    return {'ok': True}
 
 
 @app.get('/api/upgrade')

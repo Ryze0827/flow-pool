@@ -9,6 +9,23 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+
+def load_env_file(path):
+    if not path.exists():
+        return
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        os.environ.setdefault(key.strip(), value)
+
+
+load_env_file(Path(os.environ.get('FLOWPOOL_SERVICE_ROOT', Path(__file__).resolve().parent.parent)) / '.env')
+
 ROOT = Path(os.environ.get('FLOWPOOL_SERVICE_ROOT', Path(__file__).resolve().parent.parent)).resolve()
 DATA = ROOT / 'data'
 PID_FILE = DATA / 'service.json'

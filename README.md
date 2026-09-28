@@ -17,6 +17,19 @@
 
 运行日志：`data/service.log`。前端由 Python 服务直接提供，正常运行只需要一个后台进程。进程通过文件锁保证一个数据库只有一个调度 worker；不要配置多个 Uvicorn worker。
 
+首次部署前，在工程目录创建仅本机可读的 `.env`（不要提交到 Git）：
+
+```bash
+cat > .env <<'EOF'
+FLOWPOOL_ADMIN_USER=rzye
+FLOWPOOL_ADMIN_PASSWORD=替换为管理员密码
+FLOWPOOL_ALLOWED_HOSTS=localhost,127.0.0.1,[::1],testserver,flowpool.example.com
+EOF
+chmod 600 .env
+```
+
+管理员密码只在首次启动时写入本地 SQLite 的哈希；登录会话默认有效 12 小时。若要更换已有管理员密码，临时增加 `FLOWPOOL_ADMIN_RESET=1`，重启一次后删除该配置。通过 Nginx 域名访问时，将域名加入 `FLOWPOOL_ALLOWED_HOSTS`。
+
 ## 使用流程
 
 ### 页面一键升级

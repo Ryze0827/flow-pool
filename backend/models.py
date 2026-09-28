@@ -153,6 +153,11 @@ class Settings(BaseModel):
         return value
 
 
+class AdminLogin(BaseModel):
+    username: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=512)
+
+
 class Enroll(BaseModel):
     account_ids: list[int] = Field(min_length=1, max_length=500)
     pool: Pool

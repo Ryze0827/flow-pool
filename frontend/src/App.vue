@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Activity, ArrowDownToLine, ArrowRight, Check, CheckCheck, ChevronRight, CircleHelp, Clock3, CloudUpload, Database, FileJson, Gauge, Layers3, LayoutDashboard, ListFilter, LoaderCircle, Mail, Pause, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Unplug, X, Zap } from 'lucide-vue-next'
+import { Activity, ArrowDownToLine, ArrowRight, Check, CheckCheck, ChevronRight, CircleHelp, Clock3, CloudUpload, Database, FileJson, Gauge, Layers3, LayoutDashboard, ListFilter, LoaderCircle, LogOut, Mail, Pause, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Unplug, X, Zap } from 'lucide-vue-next'
 import { api } from './api'
 import ImportOptions from './ImportOptions.vue'
 import LoginImport from './LoginImport.vue'
@@ -8,6 +8,7 @@ import ReloginAccount from './ReloginAccount.vue'
 import ImportHistory from './ImportHistory.vue'
 import MailNotifications from './MailNotifications.vue'
 import SystemUpgrade from './SystemUpgrade.vue'
+import AdminLogin from './AdminLogin.vue'
 
 const clone = value => JSON.parse(JSON.stringify(value))
 const nav = [
@@ -23,6 +24,7 @@ const pools = [{ id: 'priority', name: '高权重组', desc: '核心账号，稳
 const routePaths = { overview: '/overview', accounts: '/accounts', usage: '/usage', import: '/import', rules: '/rules', events: '/events', mail: '/mail', settings: '/settings' }
 const pageFromPath = path => Object.entries(routePaths).find(([, route]) => route === path)?.[0] || 'overview'
 const page = ref(pageFromPath(globalThis.location?.pathname || '/'))
+const auth = ref({ ready: false, configured: false, authenticated: false, username: '' })
 const syncingRoute = ref(false)
 const sidebarCollapsed = ref(globalThis.localStorage?.getItem('flowpool.sidebar.collapsed') === '1')
 const refreshIntervalSeconds = 10
@@ -168,13 +170,20 @@ function notify(message, error = false) {
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => { toast.value = null }, error ? 9000 : 4500)
 }
+function handleApiError(error) {
+  if (error.status === 401) {
+    auth.value = { ...auth.value, authenticated: false }
+    loadError.value = '登录已过期，请重新登录'
+  }
+}
 async function action(fn) {
   if (busy.value) return
   busy.value = true
   try { await fn() } catch (error) { notify(error.message, true) } finally { busy.value = false }
 }
 async function refresh() {
-  try { data.value = await api('/dashboard'); loadError.value = '' } catch (error) { loadError.value = error.message }
+  if (!auth.value.authenticated) return
+  try { data.value = await api('/dashboard'); loadError.value = '' } catch (error) { handleApiError(error); loadError.value = error.message }
 }
 async function loadUsage() {
   if (!data.value.configured || usageLoading.value) return
@@ -198,10 +207,31 @@ async function loadRanking() {
     rankingSampleSize.value = result.sample_size || 0
     rankingUpdatedAt.value = Date.now() / 1000
   } catch (error) {
-    loadError.value = error.message
+    handleApiError(error); loadError.value = error.message
   } finally {
     rankingLoading.value = false
   }
+}
+async function loadWorkspace() {
+  settings.value = await api('/settings')
+  importOptions.value = clone(settings.value.import_options)
+  await refresh()
+  if (data.value.configured) {
+    await loadMetadata()
+    await loadRanking()
+    if (page.value === 'usage') await loadUsage()
+  }
+}
+async function handleAuthenticated() {
+  auth.value = { ...auth.value, authenticated: true }
+  loadError.value = ''
+  try { await loadWorkspace() } catch (error) { handleApiError(error); notify(error.message, true) }
+}
+async function logout() {
+  try { await api('/auth/logout', 'POST') } catch (error) { handleApiError(error) }
+  auth.value = { ...auth.value, authenticated: false }
+  settings.value = null
+  data.value = { accounts: [], events: [], inspections: [], batches: [], worker: {}, configured: false }
 }
 function isUsageColumnVisible(column) {
   return settings.value?.usage_visible_columns?.includes(column) ?? true
@@ -364,7 +394,11 @@ function downloadExample() {
 }
 onMounted(async () => {
   globalThis.addEventListener('popstate', handlePopState)
-  try { settings.value = await api('/settings'); importOptions.value = clone(settings.value.import_options); await refresh(); if (data.value.configured) { await loadMetadata(); await loadRanking(); if (page.value === 'usage') await loadUsage() } } catch (error) { notify(error.message, true) }
+  try {
+    const result = await api('/auth/status')
+    auth.value = { ready: true, ...result }
+    if (result.authenticated) await loadWorkspace()
+  } catch (error) { auth.value = { ready: true, configured: false, authenticated: false, username: '' }; notify(error.message, true) }
   polling = setInterval(() => { void refresh(); if (page.value === 'usage') void loadUsage() }, refreshIntervalSeconds * 1000)
   rankingPolling = setInterval(() => { void loadRanking() }, 30000)
   clock = setInterval(() => { now.value = Date.now() / 1000 }, 1000)
@@ -373,7 +407,8 @@ onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); 
 </script>
 
 <template>
-  <div :class="['app-shell', { 'sidebar-collapsed': sidebarCollapsed }]">
+  <AdminLogin v-if="auth.ready && !auth.authenticated" :configured="auth.configured" @authenticated="handleAuthenticated"/>
+  <div v-else-if="auth.ready" :class="['app-shell', { 'sidebar-collapsed': sidebarCollapsed }]">
     <aside class="sidebar">
       <a href="#" class="brand" @click.prevent="page = 'overview'"><img class="brand-mark" src="/favicon.svg" alt="" width="40" height="40"/><span>FlowPool<small>GPT 账号调控</small></span></a>
       <SystemUpgrade :busy="busy || loginLoading"/>
@@ -383,7 +418,7 @@ onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); 
     </aside>
 
     <main>
-      <header class="topbar"><div class="breadcrumb">工作空间<ChevronRight :size="13"/><strong>{{ title }}</strong></div><div class="topbar-right"><span class="connection"><span :class="['dot', data.configured ? 'green' : 'gray']"></span>{{ data.configured ? '服务已配置' : '等待连接' }}</span><span class="top-divider"></span><button class="avatar" title="连接设置" aria-label="打开连接设置" @click="page = 'settings'">管</button><span>管理员</span></div></header>
+      <header class="topbar"><div class="breadcrumb">工作空间<ChevronRight :size="13"/><strong>{{ title }}</strong></div><div class="topbar-right"><span class="connection"><span :class="['dot', data.configured ? 'green' : 'gray']"></span>{{ data.configured ? '服务已配置' : '等待连接' }}</span><span class="top-divider"></span><button class="avatar" title="连接设置" aria-label="打开连接设置" @click="page = 'settings'">管</button><span>{{ auth.username || '管理员' }}</span><button class="text-button" @click="logout"><LogOut :size="14"/>退出</button></div></header>
       <div class="main-content">
         <div v-if="loadError" class="notice error"><Unplug :size="17"/>{{ loadError }}<button class="text-button" @click="refresh">重试</button></div>
         <div v-if="['overview', 'accounts', 'events'].includes(page)" class="page-actions"><template v-if="['overview', 'accounts'].includes(page)"><button class="button" :disabled="busy" @click="openEnroll"><Plus :size="16"/>录入已有账号</button><button class="button primary" @click="page = 'import'"><CloudUpload :size="16"/>快速上号</button></template><span v-else class="badge neutral">保留最近 10,000 条 · 展示 100 条</span></div>
@@ -471,4 +506,5 @@ onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); 
 
     <div v-if="currentDetail" class="modal-overlay" @click.self="detail = null"><section class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title"><div class="modal-heading"><div><h2 id="detail-title">{{ currentDetail.name }}</h2><p>#{{ currentDetail.id }} · {{ poolName(currentDetail.pool) }}</p></div><button class="icon-button" aria-label="关闭" @click="detail = null"><X :size="20"/></button></div><div class="modal-body"><div class="detail-stats"><div><small>慢调用占比</small><strong>{{ currentDetail.sample.length ? ratio(currentDetail) + '%' : '—' }}</strong></div><div><small>有效样本</small><strong>{{ currentDetail.sample.length }}<small> 次</small></strong></div><div><small>当前状态</small><span class="badge neutral">{{ statuses[currentDetail.state] }}</span></div></div><div class="sample-chart"><div v-for="sample in [...currentDetail.sample].reverse()" :key="sample.id" class="chart-column"><span>{{ (sample.first_token_ms / 1000).toFixed(1) }}s</span><div :class="{ slow: sample.first_token_ms > settings.rule.threshold_ms }" :style="{ height: sampleHeight(sample.first_token_ms) + '%' }"></div><small>#{{ sample.id }}</small></div><p v-if="!currentDetail.sample.length" class="muted">最近 5 分钟内暂无符合当前统计周期的有效调用记录。</p></div><div class="chart-legend"><span class="dot green"></span>正常首字延迟<span class="dot orange"></span>超过 {{ settings.rule.threshold_ms / 1000 }}s</div><div class="detail-info"><p><span>有效统计窗口</span>最近 5 分钟（固定）</p><p><span>统计边界</span>{{ currentDetail.epoch ? timeText(currentDetail.epoch) : '初始采样，仅取最近 5 分钟调用' }}</p><p><span>记录 ID 水位</span>{{ currentDetail.watermark || '未设置' }}</p><p><span>最近检查</span>{{ timeText(currentDetail.last_checked) }}</p><p v-if="isGuarded(currentDetail)"><span>窗口内达限</span>{{ breachCount(currentDetail) }} / {{ settings.rule.breach_count }} 次 · 最近 {{ settings.rule.breach_window_seconds }} 秒</p><p><span>最近决策</span>{{ currentDetail.reason || '尚未触发调度' }}</p><p v-if="currentDetail.error" class="orange-text">{{ currentDetail.error }}</p></div></div></section></div>
   </div>
+  <div v-else class="auth-loading"><LoaderCircle class="spinning" :size="28"/><p>正在准备登录…</p></div>
 </template>
