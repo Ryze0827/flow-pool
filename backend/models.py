@@ -1,6 +1,6 @@
 import re
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -142,10 +142,21 @@ class RechargeTier(BaseModel):
 
 
 class RateRules(BaseModel):
+    # None preserves the legacy named defaults until the administrator saves a selection.
+    group_ids: list[Annotated[int, Field(strict=True, ge=1, le=9223372036854775807)]] | None = Field(None, min_length=1, max_length=200)
     tiers: list[RechargeTier] = Field(default_factory=lambda: [
         RechargeTier(minimum=50, rate=0.28), RechargeTier(minimum=100, rate=0.26),
         RechargeTier(minimum=200, rate=0.22), RechargeTier(minimum=500, rate=0.18),
     ], min_length=1, max_length=50)
+
+    @field_validator('group_ids')
+    @classmethod
+    def groups_valid(cls, values):
+        if values is not None:
+            if len(values) != len(set(values)):
+                raise ValueError('巡检分组不能重复')
+            return sorted(values)
+        return None
 
     @field_validator('tiers')
     @classmethod

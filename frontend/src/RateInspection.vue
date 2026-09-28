@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Check, Plus, Search, Trash2, X } from 'lucide-vue-next'
+import { Check, Plus, RefreshCw, Search, Trash2, X } from 'lucide-vue-next'
 import { api } from './api'
 
 const emit = defineEmits(['notify'])
@@ -8,6 +8,15 @@ const rules = ref(null)
 const draftRules = ref(null)
 const savingRules = ref(false)
 const rulesError = ref('')
+const groups = ref([])
+const defaultGroupIds = ref([])
+const groupsLoading = ref(false)
+const groupsError = ref('')
+const groupSearch = ref('')
+const chosenGroupIds = computed(() => draftRules.value?.group_ids ?? defaultGroupIds.value)
+const matchingGroups = computed(() => groups.value.filter(group => `${group.name} ${group.id} ${group.platform}`.toLowerCase().includes(groupSearch.value.trim().toLowerCase())))
+const missingGroupIds = computed(() => chosenGroupIds.value.filter(id => !groups.value.some(group => group.id === id)))
+const savedGroupNames = computed(() => (rules.value?.group_ids ?? defaultGroupIds.value).map(id => groups.value.find(group => group.id === id)?.name || `#${id}（不可用）`).join('、'))
 const rulesDirty = computed(() => JSON.stringify(draftRules.value) !== JSON.stringify(rules.value))
 const lowestMinimum = computed(() => rules.value?.tiers.length ? Math.min(...rules.value.tiers.map(tier => tier.minimum)) : null)
 const clone = value => JSON.parse(JSON.stringify(value))
@@ -18,11 +27,24 @@ async function loadRules() {
     draftRules.value = clone(rules.value)
   } catch (cause) { rulesError.value = cause.message }
 }
+async function loadGroups() {
+  groupsLoading.value = true; groupsError.value = ''
+  try {
+    const result = await api('/rate-inspection/groups')
+    groups.value = result.items
+    defaultGroupIds.value = result.default_group_ids
+  } catch (cause) { groupsError.value = cause.message }
+  finally { groupsLoading.value = false }
+}
+function toggleGroup(id, checked) {
+  const ids = chosenGroupIds.value.filter(value => value !== id)
+  draftRules.value.group_ids = (checked ? [...ids, id] : ids).sort((a, b) => a - b)
+}
 async function saveRules() {
-  if (savingRules.value || busy.value || correcting.value) return
+  if (savingRules.value || busy.value || correcting.value || groupsLoading.value || groupsError.value || !chosenGroupIds.value.length || missingGroupIds.value.length) return
   savingRules.value = true; rulesError.value = ''
   try {
-    rules.value = await api('/rate-inspection/rules', 'PUT', draftRules.value)
+    rules.value = await api('/rate-inspection/rules', 'PUT', { ...draftRules.value, group_ids: chosenGroupIds.value })
     draftRules.value = clone(rules.value)
     result.value = null; selected.value = []; correction.value = null
     emit('notify', '充值档位规则已保存，下一次巡检立即生效')
@@ -35,7 +57,7 @@ function acceptInspection(value) {
   rules.value = value.rules
   draftRules.value = clone(value.rules)
 }
-onMounted(loadRules)
+onMounted(() => { void loadRules(); void loadGroups() })
 const emails = ref('')
 const result = ref(null)
 const selected = ref([])
@@ -54,7 +76,7 @@ const selectedRows = computed(() => rows.value.filter(row => selected.value.incl
 const format = value => value === null ? '—' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 8 }).format(value)
 
 async function inspect() {
-  if (busy.value || correcting.value || savingRules.value || rulesDirty.value || !rules.value) return
+  if (busy.value || correcting.value || savingRules.value || groupsLoading.value || groupsError.value || rulesDirty.value || !rules.value || !chosenGroupIds.value.length || missingGroupIds.value.length) return
   busy.value = true
   error.value = ''
   result.value = null
@@ -100,10 +122,23 @@ onUnmounted(() => controller?.abort())
   <div class="rate-inspection">
     <section class="panel form-panel">
       <div class="card-title"><div><h2>充值档位规则</h2><p>按历史累计正向充值匹配最高档位，包含管理员加款，扣款不冲减累计值。</p></div></div>
-      <p class="muted">仅检查「Pro号池」和「Pro号池 (强制开启Fast)」，尊重用户分组访问权限。<template v-if="rules">当前已保存规则：未满 {{ format(lowestMinimum) }} 美元不调整倍率。</template></p>
+      <p class="muted">仅检查所选分组，尊重用户分组访问权限。<template v-if="rules">当前已保存规则：未满 {{ format(lowestMinimum) }} 美元不调整倍率。</template></p>
       <p v-if="rulesError" class="notice error" role="alert">{{ rulesError }} <button v-if="!rules" class="text-button" @click="loadRules">重试</button></p>
       <p v-if="!rules && !rulesError" class="muted">正在读取充值档位…</p>
       <form v-if="draftRules" @submit.prevent="saveRules">
+        <fieldset class="group-picker" :disabled="busy || correcting || savingRules || groupsLoading">
+          <legend>适用分组 · 已选 {{ chosenGroupIds.length }} 个</legend>
+          <div class="group-tools"><input v-model="groupSearch" type="search" placeholder="搜索分组名称、ID 或平台" aria-label="搜索适用分组"/><button class="button" type="button" @click="loadGroups"><RefreshCw :size="15"/>刷新分组</button></div>
+          <p v-if="groupsLoading" class="small muted" role="status">正在读取分组…</p>
+          <p v-if="groupsError" class="notice error" role="alert">{{ groupsError }}</p>
+          <div class="group-options">
+            <label v-for="group in matchingGroups" :key="group.id" class="group-option"><input type="checkbox" :checked="chosenGroupIds.includes(group.id)" :disabled="!chosenGroupIds.includes(group.id) && chosenGroupIds.length >= 200" @change="toggleGroup(group.id, $event.target.checked)"/><span>{{ group.name }}<small>#{{ group.id }}<template v-if="group.platform"> · {{ group.platform }}</template></small></span></label>
+          </div>
+          <p v-if="!groupsLoading && !groupsError && !matchingGroups.length" class="small muted">{{ groups.length ? '没有匹配的分组。' : '没有可用分组，请先在 Sub2API 中创建或启用分组。' }}</p>
+          <p v-for="id in missingGroupIds" :key="id" class="notice error">分组 #{{ id }} 已停用或不存在。<button type="button" class="text-button" @click="toggleGroup(id, false)">移除选择</button></p>
+          <p class="small muted">至少选择 1 个分组，最多 200 个；所选分组共用下方充值档位。</p>
+          <p v-if="!groupsLoading && !groupsError" class="small muted">{{ rules.group_ids === null ? '默认适用分组' : '已保存适用分组' }}：{{ savedGroupNames || '未选择' }}</p>
+        </fieldset>
         <div class="tier-editor">
           <div v-for="(tier, index) in draftRules.tiers" :key="index" class="tier-row">
             <label>累计充值门槛（USD）<input v-model.number="tier.minimum" type="number" min="0" max="1000000000000" step="any" required :disabled="busy || correcting || savingRules" :aria-label="`第 ${index + 1} 档充值门槛`"/></label>
@@ -114,17 +149,17 @@ onUnmounted(() => controller?.abort())
         <p class="small muted">门槛不能重复，倍率最多 4 位小数；匹配已达到的最高门槛。编辑后请先保存，已有巡检结果需重新检查。</p>
         <div class="form-actions">
           <button type="button" class="button" :disabled="busy || correcting || savingRules || draftRules.tiers.length >= 50" @click="draftRules.tiers.push({ minimum: '', rate: '' })"><Plus :size="16"/>新增档位</button>
-          <button class="button primary" :disabled="busy || correcting || savingRules || !rulesDirty"><Check :size="16"/>{{ savingRules ? '正在保存…' : '保存档位规则' }}</button>
+          <button class="button primary" :disabled="busy || correcting || savingRules || groupsLoading || !!groupsError || !chosenGroupIds.length || !!missingGroupIds.length || !rulesDirty"><Check :size="16"/>{{ savingRules ? '正在保存…' : '保存档位规则' }}</button>
           <button type="button" class="button" :disabled="busy || correcting || savingRules || !rulesDirty" @click="draftRules = clone(rules)">撤销未保存修改</button>
         </div>
-        <p v-if="rulesDirty" class="notice">档位规则有未保存修改，请保存或撤销后再巡检和纠正。</p>
+        <p v-if="rulesDirty" class="notice">档位或分组有未保存修改，请保存或撤销后再巡检和纠正。</p>
       </form>
     </section>
     <section class="panel form-panel">
       <div class="card-title"><div><h2>用户倍率巡检</h2><p>留空巡检全部用户，也可填写指定邮箱。</p></div></div>
       <label>巡检用户<textarea v-model="emails" rows="3" :disabled="busy || correcting" placeholder="支持换行、逗号、分号或空格分隔"/></label>
       <div class="form-actions">
-        <button class="button primary" :disabled="busy || correcting || savingRules || rulesDirty || !rules" @click="inspect"><Search :size="16"/>{{ busy ? '正在巡检…' : '开始巡检' }}</button>
+        <button class="button primary" :disabled="busy || correcting || savingRules || groupsLoading || !!groupsError || rulesDirty || !rules || !chosenGroupIds.length || !!missingGroupIds.length" @click="inspect"><Search :size="16"/>{{ busy ? '正在巡检…' : '开始巡检' }}</button>
         <button v-if="busy" class="button" @click="cancel"><X :size="16"/>取消巡检</button>
         <button class="button" :disabled="busy || correcting || savingRules || rulesDirty || !selected.length || !result?.inspection_id || selected.length > 10000" @click="confirmation.showModal()"><Check :size="16"/>{{ correcting ? '正在纠正并复核…' : `批量纠正 (${selected.length})` }}</button>
       </div>
@@ -158,6 +193,15 @@ onUnmounted(() => controller?.abort())
 <style scoped>
 .rate-inspection { display: grid; gap: 20px; }
 .rate-inspection textarea { width: 100%; resize: vertical; border: 1px solid var(--control-border); border-radius: 9px; padding: 12px; background: white; color: var(--text); }
+.group-picker { margin: 20px 0 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
+.group-picker legend { padding: 0 6px; font-weight: 600; }
+.group-tools { display: flex; gap: 12px; }
+.group-tools input { min-width: 0; flex: 1; }
+.group-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; max-height: 260px; overflow: auto; margin: 12px 0; }
+.group-option { display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 10px; margin: 0; border-radius: 8px; background: var(--bg); cursor: pointer; }
+.group-option input { width: 16px; height: 16px; flex: 0 0 auto; }
+.group-option span { min-width: 0; overflow-wrap: anywhere; }
+.group-option small { display: block; color: var(--muted); margin-top: 3px; }
 .tier-editor { display: grid; gap: 12px; margin-top: 20px; }
 .tier-row { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 16px; }
 .tier-row label { margin: 0; }

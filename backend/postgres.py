@@ -79,7 +79,7 @@ class Sub2Postgres:
             # Validate the actual columns used by aggregation, without reading user data.
             for query in (
                 'SELECT id, username, email, restrict_public_groups, deleted_at FROM users LIMIT 0',
-                'SELECT id, name, rate_multiplier, is_exclusive, status, deleted_at FROM groups LIMIT 0',
+                'SELECT id, name, platform, rate_multiplier, is_exclusive, status, deleted_at FROM groups LIMIT 0',
                 'SELECT used_by, value, type FROM redeem_codes LIMIT 0',
                 'SELECT user_id, group_id FROM user_allowed_groups LIMIT 0',
                 'SELECT user_id, group_id, rate_multiplier FROM user_group_rate_multipliers LIMIT 0',

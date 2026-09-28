@@ -25,7 +25,7 @@ from .scheduler import expiry_timestamp
 from . import updater
 from .auth import SESSION_TTL_SECONDS
 from .upstream_auth import UpstreamAuth
-from .rate_inspection import RateInspection
+from .rate_inspection import RateInspection, select_groups
 from .postgres import Sub2Postgres, resolve_postgres_settings
 from .analytics import Analytics
 
@@ -204,13 +204,22 @@ async def rate_rules_get():
     return store.rate_rules().model_dump()
 
 
+@app.get('/api/rate-inspection/groups')
+async def rate_groups_get():
+    return await rate_inspection.groups()
+
+
 @app.put('/api/rate-inspection/rules')
 async def rate_rules_put(value: RateRules):
     if rate_inspection.lock.locked():
         raise HTTPException(409, '正在巡检或纠正，请结束后再修改规则')
     async with rate_inspection.lock:
+        if 'group_ids' not in value.model_fields_set:
+            value.group_ids = store.rate_rules().group_ids
+        if value.group_ids is not None:
+            select_groups((await rate_inspection.groups())['items'], value)
         store.save_rate_rules(value)
-        store.event('rate_rules', '已更新充值档位规则，旧巡检结果需重新检查')
+        store.event('rate_rules', '已更新充值档位规则及巡检分组，旧巡检结果需重新检查')
     return await rate_rules_get()
 
 

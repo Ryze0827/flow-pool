@@ -18,6 +18,7 @@ from .sub2api import Sub2API, UpstreamError
 
 GROUP_NAMES = {'Pro号池', 'Pro号池 (强制开启Fast)'}
 SNAPSHOT_TTL = 30 * 60
+GROUPS_SQL = "SELECT id, name, platform FROM groups WHERE deleted_at IS NULL AND status='active' ORDER BY id"
 
 # Same aggregate as Sub2API SumPositiveBalanceByUser: no balance counter, status
 # filter, affiliate credits, negative values or deleted users. All inputs bind.
@@ -65,6 +66,22 @@ def number(value):
 def expected_rate(total, rules):
     return next((Decimal(str(tier.rate)) for tier in sorted(rules.tiers, key=lambda tier: tier.minimum, reverse=True)
                  if total >= Decimal(str(tier.minimum))), None)
+
+
+def default_groups(groups):
+    return [group for group in groups if unicodedata.normalize('NFKC', group['name']).strip() in GROUP_NAMES]
+
+
+def select_groups(groups, rules):
+    if rules.group_ids is None:
+        selected = default_groups(groups)
+    else:
+        selected = [group for group in groups if group['id'] in rules.group_ids]
+        if set(rules.group_ids) != {group['id'] for group in selected}:
+            raise HTTPException(409, '所选巡检分组已停用或不存在，请更新充值档位规则中的分组')
+    if not selected:
+        raise HTTPException(409, '请在充值档位规则中选择至少一个正常分组')
+    return selected
 
 
 def summarize(records, emails, rules=None):
@@ -116,7 +133,7 @@ class RateInspection:
 
     async def read(self, emails=None, user_ids=None, include_values=False):
         rules = self.store.rate_rules()
-        records = await self.read_postgres(emails, user_ids) if postgres_configured(self.store) else await self.read_api(emails, user_ids)
+        records = await self.read_postgres(emails, user_ids, rules) if postgres_configured(self.store) else await self.read_api(emails, user_ids, rules)
         result = summarize(records, emails or [], rules)
         result['rules'] = rules.model_dump()
         if include_values:
@@ -124,15 +141,25 @@ class RateInspection:
                                 for row in records if row['eligible'] and row['custom']}
         return result
 
-    async def read_api(self, emails, user_ids):
+    async def groups(self):
+        if postgres_configured(self.store):
+            async with Sub2Postgres(self.store).snapshot() as cursor:
+                await cursor.execute(GROUPS_SQL)
+                groups = await cursor.fetchall()
+        else:
+            async with Sub2API(self.store.settings()) as client:
+                groups = [group for group in await client.all('groups')
+                          if group.get('status') == 'active' and not group.get('deleted_at')]
+        # The group API contains internal settings; expose only selector metadata.
+        return {'items': [{'id': group['id'], 'name': group['name'], 'platform': group.get('platform', '')}
+                          for group in groups], 'default_group_ids': [group['id'] for group in default_groups(groups)]}
+
+    async def read_api(self, emails, user_ids, rules):
         # Compatibility mode: use the server's lifetime aggregate, never infer
         # recharge from balance or a partial page of balance-history items.
         async with Sub2API(self.store.settings()) as client:
-            groups = [group for group in await client.all('groups')
-                      if group.get('status') == 'active' and not group.get('deleted_at')
-                      and unicodedata.normalize('NFKC', group['name']).strip() in GROUP_NAMES]
-            if not groups:
-                raise HTTPException(409, '未找到正常状态的 Pro号池 或 Pro号池 (强制开启Fast)')
+            groups = select_groups([group for group in await client.all('groups')
+                                    if group.get('status') == 'active' and not group.get('deleted_at')], rules)
             overrides = {}
             for group in groups:
                 entries = await client.request('GET', f"groups/{group['id']}/rate-multipliers")
@@ -169,13 +196,10 @@ class RateInspection:
                     records.extend(rows)
             return records
 
-    async def read_postgres(self, emails, user_ids):
+    async def read_postgres(self, emails, user_ids, rules):
         async with Sub2Postgres(self.store).snapshot() as cursor:
-            await cursor.execute("SELECT id, name FROM groups WHERE deleted_at IS NULL AND status='active'")
-            groups = [group for group in await cursor.fetchall()
-                      if unicodedata.normalize('NFKC', group['name']).strip() in GROUP_NAMES]
-            if not groups:
-                raise HTTPException(409, '未找到正常状态的 Pro号池 或 Pro号池 (强制开启Fast)')
+            await cursor.execute(GROUPS_SQL)
+            groups = select_groups(await cursor.fetchall(), rules)
             await cursor.execute(INSPECTION_SQL, {'all_emails': emails is None, 'emails': emails or [],
                 'all_ids': user_ids is None, 'user_ids': user_ids or [], 'group_ids': [g['id'] for g in groups]})
             return await cursor.fetchall()
