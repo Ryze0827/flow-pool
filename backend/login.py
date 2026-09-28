@@ -104,7 +104,7 @@ class AccountLogin:
                     curl_code = diagnostic.get('curl_code')
                     curl_code = curl_code if isinstance(curl_code, int) else None
                     # 仅记录固定阶段、枚举错误码和数字状态，不记录账号/URL/响应正文或凭据。
-                    safe_code = code if isinstance(code, str) and code.isascii() and code.replace('_', '').isalnum() and len(code) <= 80 else 'unknown_error'
+                    safe_code = code if isinstance(code, str) and code in ERRORS else 'unknown_error'
                     logger.warning('account_login attempt=%s stage=%s error=%s http_status=%s curl_code=%s challenge=%s elapsed=%.2fs',
                                    attempt, stage, safe_code, status, curl_code, diagnostic.get('challenge') is True, time.monotonic() - started)
                     message = ERRORS.get(code, '官方登录流程未完成，可能需要额外验证或认证协议已变化；可使用 JSON 导入')

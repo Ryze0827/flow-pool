@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -127,6 +128,58 @@ class ImportOptions(BaseModel):
         return value
 
 
+class RechargeTier(BaseModel):
+    minimum: float = Field(ge=0, le=1e12, allow_inf_nan=False)
+    rate: float = Field(gt=0, le=1000, allow_inf_nan=False)
+
+    @field_validator('rate')
+    @classmethod
+    def rate_precision(cls, value):
+        amount = Decimal(str(value))
+        if amount != amount.quantize(Decimal('0.0001')):
+            raise ValueError('倍率最多支持 4 位小数')
+        return value
+
+
+class RateRules(BaseModel):
+    tiers: list[RechargeTier] = Field(default_factory=lambda: [
+        RechargeTier(minimum=50, rate=0.28), RechargeTier(minimum=100, rate=0.26),
+        RechargeTier(minimum=200, rate=0.22), RechargeTier(minimum=500, rate=0.18),
+    ], min_length=1, max_length=50)
+
+    @field_validator('tiers')
+    @classmethod
+    def tiers_valid(cls, values):
+        if len({tier.minimum for tier in values}) != len(values):
+            raise ValueError('充值门槛不能重复')
+        return sorted(values, key=lambda tier: tier.minimum)
+
+
+class PostgresSettings(BaseModel):
+    host: str = Field('127.0.0.1', min_length=1, max_length=253)
+    port: int = Field(5432, ge=1, le=65535)
+    database: str = Field('sub2api', min_length=1, max_length=128)
+    username: str = Field('', max_length=128)
+    password: str = Field('', max_length=4096)
+    sslmode: Literal['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'] = 'prefer'
+    connect_timeout: int = Field(5, ge=1, le=30)
+    statement_timeout: int = Field(30, ge=1, le=300)
+
+    @field_validator('host', 'database', 'username')
+    @classmethod
+    def pg_text_valid(cls, value, info):
+        if any(ord(char) < 32 for char in value):
+            raise ValueError('不能包含控制字符')
+        value = value.strip()
+        if not value and info.field_name in {'host', 'database'}:
+            raise ValueError('不能为空')
+        return value
+
+
+class PostgresSettingsUpdate(PostgresSettings):
+    clear_password: bool = False
+
+
 class Settings(BaseModel):
     base_url: str = ''
     admin_key: str = Field('', max_length=4096)
@@ -154,8 +207,24 @@ class Settings(BaseModel):
 
 
 class AdminLogin(BaseModel):
-    username: str = Field(min_length=1, max_length=128)
-    password: str = Field(min_length=1, max_length=512)
+    email: str = Field(min_length=3, max_length=254, pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+    password: SecretStr = Field(min_length=1, max_length=512)
+    turnstile_token: str = Field('', max_length=4096)
+
+
+class AdminLogin2FA(BaseModel):
+    temp_token: str = Field(min_length=1, max_length=4096)
+    totp_code: str = Field(pattern=r'^\d{6}$')
+
+
+class RateInspectionRequest(BaseModel):
+    emails: str = Field('', max_length=100000)
+
+
+class RateCorrectionRequest(BaseModel):
+    inspection_id: str = Field(min_length=1, max_length=64)
+    row_ids: list[str] = Field(min_length=1, max_length=10000)
+
 
 
 class Enroll(BaseModel):
@@ -177,6 +246,12 @@ class LoginCredentials(BaseModel):
 
 class ReloginImport(LoginCredentials):
     provider: Literal['local', 'session_studio'] = 'session_studio'
+
+
+class SavedRelogin(BaseModel):
+    model_config = {'extra': 'forbid'}
+    use_saved: Literal[True]
+    provider: Literal['local', 'session_studio'] | None = None
 
 
 class LoginImport(ReloginImport):

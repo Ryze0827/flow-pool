@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import AdminLogin, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, Settings
+from .models import AdminLogin, AdminLogin2FA, RateInspectionRequest, RateCorrectionRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -24,6 +24,10 @@ from .sub2api import Sub2API, UpstreamError, public_account
 from .scheduler import expiry_timestamp
 from . import updater
 from .auth import SESSION_TTL_SECONDS
+from .upstream_auth import UpstreamAuth
+from .rate_inspection import RateInspection
+from .postgres import Sub2Postgres, resolve_postgres_settings
+from .analytics import Analytics
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('SCHEDULER_DATA_DIR', ROOT / 'data'))
@@ -32,12 +36,14 @@ scheduler = None
 importer = None
 account_login = None
 mailer = None
+upstream_auth = None
+rate_inspection = None
 POOL_NAMES = {'priority': '高权重组', 'risk': '风控组', 'third_party': '三方账号组'}
 
 
 @asynccontextmanager
 async def lifespan(app):
-    global store, scheduler, importer, account_login, mailer
+    global store, scheduler, importer, account_login, mailer, upstream_auth, rate_inspection
     DATA.mkdir(parents=True, exist_ok=True)
     lock_file = (DATA / 'worker.lock').open('w')
     try:
@@ -45,8 +51,8 @@ async def lifespan(app):
     except BlockingIOError:
         raise RuntimeError('已有调度进程使用此数据库；请勿启动多个 worker') from None
     store = Store(DATA)
-    store.bootstrap_admin(os.environ.get('FLOWPOOL_ADMIN_USER', ''), os.environ.get('FLOWPOOL_ADMIN_PASSWORD', ''),
-                          reset=os.environ.get('FLOWPOOL_ADMIN_RESET') == '1')
+    upstream_auth = UpstreamAuth(store)
+    rate_inspection = RateInspection(store)
     mailer = Mailer(store)
     scheduler = Scheduler(store, mailer)
     importer = Importer(store, scheduler)
@@ -75,35 +81,57 @@ async def lifespan(app):
         lock_file.close()
 
 
-app = FastAPI(title='GPT 账号调控', lifespan=lifespan, docs_url=None, redoc_url=None)
+app = FastAPI(title='GPT 账号调控', lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 allowed_hosts = [item.strip() for item in os.environ.get('FLOWPOOL_ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1],testserver').split(',') if item.strip()]
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 
 @app.middleware('http')
 async def local_security(request: Request, call_next):
-    public_api = {'/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/logout'}
+    def secured(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['X-Frame-Options'] = 'DENY'
+        if request.url.path.startswith('/api/'):
+            response.headers['Cache-Control'] = 'no-store'
+        return response
+
+    def reject(message, status):
+        return secured(JSONResponse({'detail': message}, status_code=status))
+
+    public_api = {'/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/login/2fa', '/api/auth/public-settings', '/api/auth/logout'}
     if request.url.path.startswith('/api/') and request.url.path not in public_api:
-        if not store or not store.session(request.cookies.get('flowpool_session')):
-            return JSONResponse({'detail': '请先登录'}, status_code=401)
+        try:
+            user = await upstream_auth.session(request.cookies.get('flowpool_session')) if upstream_auth else None
+        except HTTPException as error:
+            return reject(error.detail, error.status_code)
+        if not user:
+            return reject('请先使用 Sub2API 管理员账号登录', 401)
+        request.state.admin = user
     if request.url.path.startswith('/api/') and request.method != 'GET':
         origin = request.headers.get('origin')
         if request.headers.get('x-scheduler-request') != '1' or (origin and urlsplit(origin).netloc != request.headers.get('host')):
-            return JSONResponse({'detail': '仅接受本机同源页面操作'}, status_code=403)
+            return reject('仅接受同源页面操作', 403)
         if request.url.path != '/api/upgrade' and (updater.locked(DATA) or (DATA / 'upgrade-deploying').exists()):
-            return JSONResponse({'detail': '系统升级中，请等待完成后再操作'}, status_code=409)
-        if int(request.headers.get('content-length', '0')) > 8 * 1024 * 1024:
-            return JSONResponse({'detail': 'JSON 文件不能超过 8 MB'}, status_code=413)
-        body = await request.body()
-        if len(body) > 8 * 1024 * 1024:
-            return JSONResponse({'detail': 'JSON 文件不能超过 8 MB'}, status_code=413)
-    response = await call_next(request)
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['Referrer-Policy'] = 'no-referrer'
-    response.headers['X-Frame-Options'] = 'DENY'
-    if request.url.path.startswith('/api/'):
-        response.headers['Cache-Control'] = 'no-store'
-    return response
+            return reject('系统升级中，请等待完成后再操作', 409)
+        try:
+            length = int(request.headers.get('content-length', '0'))
+            if length < 0:
+                raise ValueError()
+        except ValueError:
+            return reject('请求长度无效', 400)
+        maximum = 8 * 1024 * 1024
+        if length > maximum:
+            return reject('JSON 文件不能超过 8 MB', 413)
+        chunks, size = [], 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > maximum:
+                return reject('JSON 文件不能超过 8 MB', 413)
+            chunks.append(chunk)
+        # Starlette's cached request replays this bounded body to call_next.
+        request._body = b''.join(chunks)
+    return secured(await call_next(request))
 
 
 @app.exception_handler(UpstreamError)
@@ -119,8 +147,9 @@ async def mail_error(request, error):
 @app.exception_handler(RequestValidationError)
 async def validation_error(request, error):
     # Pydantic 默认会回显 input，管理员 Key 和上传凭据不可出现在错误响应中。
-    issues = ['.'.join(str(p) for p in e['loc'][1:]) + ': ' + e['msg'] for e in error.errors()]
-    return JSONResponse({'detail': '；'.join(issues)}, status_code=422)
+    # Nested dictionary keys and validator exception messages can also contain
+    # user-supplied credentials. Do not echo locations or diagnostic contexts.
+    return JSONResponse({'detail': '请求参数无效，请检查必填项、格式、数值范围及规则是否重复'}, status_code=422)
 
 
 @app.get('/api/health')
@@ -130,29 +159,91 @@ async def health():
 
 @app.get('/api/auth/status')
 async def auth_status(request: Request):
-    session = store.session(request.cookies.get('flowpool_session'))
-    return {'configured': store.admin_configured(), 'authenticated': bool(session),
-            'username': session['username'] if session else ''}
+    user = await upstream_auth.session(request.cookies.get('flowpool_session'))
+    return {'configured': bool(store.settings().base_url), 'authenticated': bool(user),
+            'username': (user.get('username') or user.get('email')) if user else ''}
+
+
+@app.get('/api/auth/public-settings')
+async def auth_public_settings():
+    settings = await upstream_auth.request('GET', 'settings/public')
+    return {key: settings.get(key) for key in ('turnstile_enabled', 'turnstile_site_key')}
+
+
+async def complete_login(value, request, response, two_factor=False):
+    body = value.model_dump()
+    if not two_factor:
+        body['password'] = value.password.get_secret_value()
+    result, token = await upstream_auth.login(body, two_factor)
+    if token:
+        await upstream_auth.logout(request.cookies.get('flowpool_session'))
+        response.set_cookie('flowpool_session', token, max_age=SESSION_TTL_SECONDS, httponly=True,
+                            secure=request.url.scheme == 'https', samesite='lax', path='/')
+    return result
 
 
 @app.post('/api/auth/login')
 async def auth_login(value: AdminLogin, request: Request, response: Response):
-    if not store.admin_configured():
-        raise HTTPException(503, '管理员尚未配置，请设置 FLOWPOOL_ADMIN_USER 和 FLOWPOOL_ADMIN_PASSWORD 后重启服务')
-    if not store.authenticate_admin(value.username, value.password):
-        raise HTTPException(401, '管理员账号或密码错误')
-    token, expires_at = store.create_session(value.username, SESSION_TTL_SECONDS)
-    forwarded_proto = request.headers.get('x-forwarded-proto', request.url.scheme)
-    response.set_cookie('flowpool_session', token, max_age=SESSION_TTL_SECONDS, httponly=True,
-                        secure=forwarded_proto == 'https', samesite='lax', path='/')
-    return {'ok': True, 'username': value.username, 'expires_at': expires_at}
+    return await complete_login(value, request, response)
+
+
+@app.post('/api/auth/login/2fa')
+async def auth_login_2fa(value: AdminLogin2FA, request: Request, response: Response):
+    return await complete_login(value, request, response, True)
 
 
 @app.post('/api/auth/logout')
 async def auth_logout(request: Request, response: Response):
-    store.delete_session(request.cookies.get('flowpool_session'))
+    await upstream_auth.logout(request.cookies.get('flowpool_session'))
     response.delete_cookie('flowpool_session', path='/')
     return {'ok': True}
+
+
+@app.get('/api/rate-inspection/rules')
+async def rate_rules_get():
+    return store.rate_rules().model_dump()
+
+
+@app.put('/api/rate-inspection/rules')
+async def rate_rules_put(value: RateRules):
+    if rate_inspection.lock.locked():
+        raise HTTPException(409, '正在巡检或纠正，请结束后再修改规则')
+    async with rate_inspection.lock:
+        store.save_rate_rules(value)
+        store.event('rate_rules', '已更新充值档位规则，旧巡检结果需重新检查')
+    return await rate_rules_get()
+
+
+@app.get('/api/postgres/settings')
+async def postgres_settings_get():
+    value = store.postgres_settings()
+    return {**value.model_dump(exclude={'password'}), 'password': '',
+            'password_configured': bool(value.password), 'source': store.postgres_source()}
+
+
+@app.put('/api/postgres/settings')
+async def postgres_settings_put(value: PostgresSettingsUpdate):
+    if rate_inspection.lock.locked():
+        raise HTTPException(409, '正在巡检或纠正，请结束后再修改数据库配置')
+    async with rate_inspection.lock:
+        store.save_postgres_settings(resolve_postgres_settings(store, value))
+        store.event('postgres_settings', '已更新 Sub2API PostgreSQL 连接配置')
+    return await postgres_settings_get()
+
+
+@app.post('/api/postgres/test')
+async def postgres_test(value: PostgresSettingsUpdate):
+    return await Sub2Postgres(store, resolve_postgres_settings(store, value)).test()
+
+
+@app.post('/api/rate-inspection')
+async def inspect_rates(value: RateInspectionRequest, request: Request):
+    return await rate_inspection.inspect(value.emails, request.state.admin['id'])
+
+
+@app.post('/api/rate-inspection/correct')
+async def correct_rates(value: RateCorrectionRequest, request: Request):
+    return await rate_inspection.correct(value.inspection_id, value.row_ids, request.state.admin['id'])
 
 
 @app.get('/api/upgrade')
@@ -172,7 +263,9 @@ async def upgrade_start():
 
 def resolve_mail_settings(value):
     current = store.mail_settings()
-    if not value.smtp_password and value.smtp_host == current.smtp_host and value.smtp_username == current.smtp_username:
+    if not value.smtp_password and current.smtp_password:
+        if any(getattr(value, key) != getattr(current, key) for key in ('smtp_host', 'smtp_port', 'smtp_username', 'smtp_use_tls')):
+            raise HTTPException(400, 'SMTP 连接目标或 TLS 设置已变化，请重新填写密码')
         value.smtp_password = current.smtp_password
     return value
 
@@ -229,10 +322,8 @@ async def settings_get():
 async def settings_put(value: Settings):
     async with scheduler.lock:
         current = store.settings()
-        if current.base_url and current.base_url != value.base_url and (store.accounts() or store.batches()):
-            raise HTTPException(409, '切换上游地址前，请移除本地托管账号并清空导入批次，防止跨服务账号 ID 混用')
-        if current.base_url and value.base_url != current.base_url and not value.admin_key:
-            raise HTTPException(400, '切换上游地址时请填写对应的新管理员 Key')
+        if current.base_url and current.base_url != value.base_url:
+            raise HTTPException(409, '登录与管理必须使用同一后端；请在服务器配置 FLOWPOOL_SUB2API_URL 后重启')
         if not value.admin_key:
             value.admin_key = current.admin_key
         if value.rule.enabled and (not value.base_url or not value.admin_key):
@@ -309,58 +400,17 @@ async def dashboard():
 async def usage(page: int = 1, page_size: int = 50):
     page = max(1, min(page, 10000))
     page_size = max(10, min(page_size, 100))
-    async with Sub2API(store.settings()) as client:
-        return await client.usage(page=page, page_size=page_size)
+    return await Analytics(store).usage(page, page_size)
 
 
 @app.get('/api/usage/pools')
 async def usage_pools(limit: int = 15):
-    limit = max(1, min(limit, 50))
-    pool_names = ('priority', 'risk', 'third_party')
-    records = {pool: [] for pool in pool_names}
-    pool_by_account = {int(account['id']): account['pool'] for account in store.accounts()}
-    if not pool_by_account:
-        return {'pools': {pool: {'items': [], 'total': 0, 'has_more': False} for pool in pool_names}}
-    async with Sub2API(store.settings()) as client:
-        for page in range(1, 21):
-            result = await client.usage(page=page, page_size=100)
-            items = result.get('items') or []
-            for item in items:
-                pool = pool_by_account.get(int(item['account_id'])) if item.get('account_id') is not None else None
-                if pool in records and len(records[pool]) < limit:
-                    records[pool].append(item)
-            if all(len(records[pool]) >= limit for pool in pool_names) or not items or page >= result.get('pages', page):
-                break
-    return {'pools': {pool: {'items': records[pool], 'total': len(records[pool]), 'has_more': len(records[pool]) >= limit} for pool in pool_names}}
+    return await Analytics(store).pools(max(1, min(limit, 50)))
 
 
 @app.get('/api/usage/ranking')
 async def usage_ranking():
-    """Rank every locally managed account by share of the newest 100 calls."""
-    accounts = store.accounts()
-    ranking = {int(account['id']): {
-        'account_id': int(account['id']), 'account_name': account['name'],
-        'pool': account['pool'], 'state': account['state'], 'share': 0,
-        'last_created_at': None,
-    } for account in accounts}
-    if not ranking:
-        return {'items': [], 'sample_size': 0}
-    async with Sub2API(store.settings()) as client:
-        result = await client.usage(page=1, page_size=100)
-    items = result.get('items') or []
-    total = len(items)
-    seen = {}
-    for item in items:
-        account_id = item.get('account_id')
-        if account_id is None or int(account_id) not in ranking:
-            continue
-        key = int(account_id)
-        seen[key] = seen.get(key, 0) + 1
-        if ranking[key]['last_created_at'] is None:
-            ranking[key]['last_created_at'] = item.get('created_at')
-    for account_id, count in seen.items():
-        ranking[account_id]['share'] = round(count / total * 100, 1) if total else 0
-    return {'items': sorted(ranking.values(), key=lambda item: (-item['share'], item['account_name'].casefold(), item['account_id'])), 'sample_size': total}
+    return await Analytics(store).ranking()
 
 
 @app.post('/api/accounts/enroll')
@@ -486,15 +536,33 @@ async def import_check(batch_id: str):
         return public_batch(batch)
 
 
+def relogin_item(batch_id, item_index):
+    batch = store.batch(batch_id)
+    if not batch:
+        raise HTTPException(404, '导入批次不存在')
+    item = next((item for item in batch['items'] if item['index'] == item_index), None)
+    if not item:
+        raise HTTPException(404, '批次账号不存在')
+    return batch, item
+
+
+@app.get('/api/import/{batch_id}/items/{item_index}/relogin')
+async def import_relogin_status(batch_id: str, item_index: int):
+    _, item = relogin_item(batch_id, item_index)
+    saved = importer.saved_relogin(item)
+    return {'saved_available': saved is not None, 'provider': saved.provider if saved else None}
+
+
 @app.post('/api/import/{batch_id}/items/{item_index}/relogin')
-async def import_relogin(batch_id: str, item_index: int, value: ReloginImport):
+async def import_relogin(batch_id: str, item_index: int, value: SavedRelogin | ReloginImport):
+    saved = None
     async with scheduler.lock:
-        original = store.batch(batch_id)
-        if not original:
-            raise HTTPException(404, '导入批次不存在')
-        item = next((item for item in original['items'] if item['index'] == item_index), None)
-        if not item:
-            raise HTTPException(404, '批次账号不存在')
+        original, item = relogin_item(batch_id, item_index)
+        if isinstance(value, SavedRelogin):
+            saved = importer.saved_relogin(item)
+            if saved is None:
+                raise HTTPException(409, '未找到完整可复用的登录记录，请手动填写当前账号、密码和 2FA')
+            value = saved.model_copy(update={'provider': value.provider or saved.provider})
         options = ImportOptions(**original['options'])
         connection = store.settings()
         async with Sub2API(connection) as client:
@@ -516,6 +584,8 @@ async def import_relogin(batch_id: str, item_index: int, value: ReloginImport):
         current_item = next((entry for entry in batch['items'] if entry['index'] == item_index), None) if batch else None
         if not batch or not current_item or {key: value for key, value in current_item.items() if key != 'health'} != {key: value for key, value in item.items() if key != 'health'} or batch['options'] != original['options']:
             raise HTTPException(409, '登录期间批次已删除或账号记录发生变化，未推送，请重新操作')
+        if saved is not None and importer.saved_relogin(current_item) != saved:
+            raise HTTPException(409, '登录期间已保存的登录记录发生变化，未推送，请重新操作')
         async with Sub2API(current) as client:
             await importer.validate_options(client, options)
             latest_target = await importer.relogin_target(client, item, value.email, options.pool)

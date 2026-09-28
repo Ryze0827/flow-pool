@@ -79,7 +79,7 @@ async def login(value):
     if value.workspace_id:
         payload['account_id'] = value.workspace_id
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(TIMEOUT_SECONDS, connect=20), follow_redirects=False, headers=headers) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(TIMEOUT_SECONDS, connect=20), follow_redirects=False, trust_env=False, headers=headers) as client:
             async with client.stream('POST', ENDPOINT, json=payload) as response:
                 if response.status_code in {401, 403}:
                     raise UpstreamError('第三方网站拒绝 API 请求或要求身份 / 人机验证，请使用网站导出 JSON 后导入', 502)

@@ -5,7 +5,9 @@ import time
 import uuid
 from datetime import datetime
 
-from .models import ImportOptions
+from pydantic import ValidationError
+
+from .models import ImportOptions, ReloginImport
 from .sub2api import UpstreamError, public_account
 
 POOL_NAMES = {'priority': '高权重组', 'risk': '风控组', 'third_party': '三方账号组'}
@@ -22,12 +24,6 @@ def recovery_material(value, options):
         return None
     return {'email': value.email, 'password': value.password.get_secret_value(), 'totp_secret': secret,
             'workspace_id': value.workspace_id, 'provider': value.provider, 'options': options.model_dump()}
-
-
-def recovery_note(recovery):
-    if not recovery:
-        return ''
-    return '----'.join((recovery['email'], recovery['password'], recovery.get('totp_secret', '')))
 
 
 def recovery_from_note(note):
@@ -123,6 +119,23 @@ class Importer:
         self.store = store
         self.scheduler = scheduler
 
+    def saved_relogin(self, item):
+        # A pending retry may contain newer credentials than account_recovery.
+        # Resolve only this item's recovery or its bound account ID, never an
+        # arbitrary email supplied by the browser. Nothing secret is returned to UI.
+        recovery = item.get('recovery') or (self.store.recovery(item['account_id']) if item.get('account_id') else None)
+        if not isinstance(recovery, dict) or 'totp_secret' not in recovery:
+            return None
+        try:
+            value = ReloginImport(**recovery)
+        except (ValidationError, TypeError):
+            return None
+        if item.get('email') and value.email.casefold() != item['email'].casefold():
+            return None
+        if re.fullmatch(r'\d{6}', value.totp_secret.get_secret_value().strip()):
+            return None
+        return value
+
     def ensure_pool_available(self, account_id, pool):
         local = self.store.account(account_id)
         if local and local['pool'] != pool:
@@ -206,6 +219,8 @@ class Importer:
             if item['status'] in {'done', 'skipped'}:
                 continue
             item.pop('health', None)
+            if item.get('payload') and recovery_from_note(item['payload'].get('notes')):
+                item['payload']['notes'] = '\n'.join(line for line in item['payload']['notes'].splitlines() if not recovery_from_note(line))
             try:
                 if item['status'] in {'creating', 'uncertain'}:
                     # 崩溃或超时后不盲目重发创建；同名唯一账号可用于恢复进度。
@@ -231,20 +246,14 @@ class Importer:
                         item['account_id'] = matches[0]['id']
                         item['status'] = 'updating'
                         self.store.save_batch(batch)
-                        if item.get('recovery'):
-                            item['payload']['notes'] = recovery_note(item['recovery'])
                         await client.request('PUT', f"accounts/{item['account_id']}", json=item['payload'])
                     else:
                         item['status'] = 'creating'
                         self.store.save_batch(batch)
-                        if item.get('recovery'):
-                            item['payload']['notes'] = recovery_note(item['recovery'])
                         remote = await client.request('POST', 'accounts', json=item['payload'], headers={'Idempotency-Key': f"scheduler-{batch['id']}-{item['index']}"})
                         item['account_id'] = remote['id']
                         existing.append(remote)
                 elif item['status'] == 'updating':
-                    if item.get('recovery'):
-                        item['payload']['notes'] = recovery_note(item['recovery'])
                     await client.request('PUT', f"accounts/{item['account_id']}", json=item['payload'])
                 item['status'] = 'created'
                 self.store.save_batch(batch)

@@ -61,7 +61,7 @@ class Sub2API:
     def __init__(self, settings):
         if not settings.base_url or not settings.admin_key:
             raise UpstreamError('请先配置 Sub2API 地址和管理员 API Key', 400)
-        self.http = httpx.AsyncClient(base_url=settings.base_url + '/api/v1/admin/', headers={'X-API-Key': settings.admin_key}, timeout=30, follow_redirects=False)
+        self.http = httpx.AsyncClient(base_url=settings.base_url + '/api/v1/admin/', headers={'X-API-Key': settings.admin_key}, timeout=30, follow_redirects=False, trust_env=False)
         self.clock_offset = 0
 
     async def __aenter__(self):

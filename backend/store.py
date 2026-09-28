@@ -1,5 +1,4 @@
 import json
-import hmac
 import os
 import sqlite3
 import time
@@ -7,8 +6,8 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
-from .auth import hash_password, new_session_token, session_digest, verify_password
-from .models import MailSettings, Settings
+from .models import MailSettings, PostgresSettings, RateRules, Settings
+from .sub2api import public_account
 
 
 class Store:
@@ -29,6 +28,8 @@ class Store:
         self.db.execute('PRAGMA busy_timeout=5000')
         self.db.executescript('''
             CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS postgres_settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS rate_rules (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS mail_settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS mail_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, kind TEXT NOT NULL,
@@ -91,47 +92,6 @@ class Store:
                     self.db.execute("UPDATE accounts SET cooldown_count=1 WHERE resume_at IS NOT NULL AND state IN ('cooldown', 'resuming')")
         self.db.commit()
 
-    def bootstrap_admin(self, username, password, reset=False):
-        if not username or not password:
-            return False
-        row = self.db.execute('SELECT 1 FROM admin_credentials WHERE id=1').fetchone()
-        if not row or reset:
-            self.db.execute('INSERT OR REPLACE INTO admin_credentials VALUES (1, ?, ?, ?)',
-                            (username, hash_password(password), time.time()))
-            self.db.execute('DELETE FROM auth_sessions')
-            self.db.commit()
-        return True
-
-    def admin_configured(self):
-        return self.db.execute('SELECT 1 FROM admin_credentials WHERE id=1').fetchone() is not None
-
-    def authenticate_admin(self, username, password):
-        row = self.db.execute('SELECT username, password_hash FROM admin_credentials WHERE id=1').fetchone()
-        return bool(row and hmac.compare_digest(str(username), str(row['username'])) and verify_password(password, row['password_hash']))
-
-    def create_session(self, username, ttl):
-        token = new_session_token()
-        now = time.time()
-        self.db.execute('DELETE FROM auth_sessions WHERE expires_at<=?', (now,))
-        self.db.execute('INSERT INTO auth_sessions VALUES (?, ?, ?, ?)',
-                        (session_digest(token), username, now, now + ttl))
-        self.db.commit()
-        return token, now + ttl
-
-    def session(self, token):
-        if not token:
-            return None
-        now = time.time()
-        row = self.db.execute('SELECT username, expires_at FROM auth_sessions WHERE token_hash=? AND expires_at>? ',
-                              (session_digest(token), now)).fetchone()
-        self.db.execute('DELETE FROM auth_sessions WHERE expires_at<=?', (now,))
-        self.db.commit()
-        return dict(row) if row else None
-
-    def delete_session(self, token):
-        if token:
-            self.db.execute('DELETE FROM auth_sessions WHERE token_hash=?', (session_digest(token),))
-            self.db.commit()
     def seal(self, value):
         return self.cipher.encrypt(json.dumps(value, ensure_ascii=False).encode()).decode()
 
@@ -140,10 +100,48 @@ class Store:
 
     def settings(self):
         row = self.db.execute('SELECT payload FROM settings WHERE id=1').fetchone()
-        return Settings(**self.unseal(row['payload'])) if row else Settings()
+        value = self.unseal(row['payload']) if row else {}
+        if os.environ.get('FLOWPOOL_SUB2API_URL'):
+            value['base_url'] = os.environ['FLOWPOOL_SUB2API_URL']
+        return Settings(**value)
 
     def save_settings(self, settings):
         self.db.execute('INSERT OR REPLACE INTO settings VALUES (1, ?)', (self.seal(settings.model_dump()),))
+        self.db.commit()
+
+    def rate_rules(self):
+        row = self.db.execute('SELECT payload FROM rate_rules WHERE id=1').fetchone()
+        return RateRules(**self.unseal(row['payload'])) if row else RateRules()
+
+    def save_rate_rules(self, value):
+        self.db.execute('INSERT OR REPLACE INTO rate_rules VALUES (1, ?)', (self.seal(value.model_dump()),))
+        self.db.commit()
+
+    def postgres_source(self):
+        if self.db.execute('SELECT 1 FROM postgres_settings WHERE id=1').fetchone():
+            return 'saved'
+        return 'environment' if os.environ.get('FLOWPOOL_SUB2API_PG_DSN') else 'default'
+
+    def postgres_settings(self):
+        row = self.db.execute('SELECT payload FROM postgres_settings WHERE id=1').fetchone()
+        if row:
+            return PostgresSettings(**self.unseal(row['payload']))
+        dsn = os.environ.get('FLOWPOOL_SUB2API_PG_DSN', '')
+        if dsn:
+            import psycopg
+            from psycopg.conninfo import conninfo_to_dict
+            from fastapi import HTTPException
+            try:
+                values = conninfo_to_dict(dsn)
+                mapping = {'host': 'host', 'port': 'port', 'dbname': 'database', 'user': 'username',
+                           'password': 'password', 'sslmode': 'sslmode', 'connect_timeout': 'connect_timeout'}
+                return PostgresSettings(**{mapping[key]: value for key, value in values.items() if key in mapping})
+            except (ValueError, psycopg.Error):
+                raise HTTPException(503, 'PostgreSQL 环境变量配置无效，请检查 FLOWPOOL_SUB2API_PG_DSN') from None
+        return PostgresSettings()
+
+    def save_postgres_settings(self, value):
+        self.db.execute('INSERT OR REPLACE INTO postgres_settings VALUES (1, ?)', (self.seal(value.model_dump()),))
         self.db.commit()
 
     def mail_settings(self):
@@ -189,9 +187,11 @@ class Store:
         result = dict(row)
         for key in ('remote', 'sample', 'breach_times'):
             result[key] = json.loads(result[key])
+        result['remote'] = public_account(result['remote'])
         return result
 
     def enroll(self, remote, pool):
+        remote = public_account(remote)
         self.db.execute('''INSERT INTO accounts(id, name, pool, remote, updated_at) VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET name=excluded.name, pool=excluded.pool, remote=excluded.remote,
             updated_at=excluded.updated_at''', (remote['id'], remote['name'], pool, json.dumps(remote), time.time()))
@@ -203,6 +203,8 @@ class Store:
         if not values.keys() <= allowed:
             raise ValueError('Invalid account fields')
         values['updated_at'] = time.time()
+        if 'remote' in values:
+            values['remote'] = public_account(values['remote'])
         for key in ('remote', 'sample', 'breach_times'):
             if key in values:
                 values[key] = json.dumps(values[key])

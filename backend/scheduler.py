@@ -6,6 +6,7 @@ import contextlib
 
 from .sub2api import Sub2API, UpstreamError, image_only_account, public_account
 from .batch_health import authentication_failed
+from .analytics import Analytics
 from .importer import ReloginCancelled
 from . import updater
 
@@ -182,7 +183,7 @@ class Scheduler:
             # 外部恢复只对齐本地状态，不再次写入上游调度开关。
             monitored = account.get('pool') in rule.guarded_pools and not image_only
             try:
-                watermark = await client.watermark(account_id) if monitored else account['watermark']
+                watermark = await Analytics(self.store, client).watermark(account_id) if monitored else account['watermark']
             except UpstreamError:
                 # 保留恢复前的快照，下轮继续建立基线，避免失败后混入旧样本。
                 self.store.update(account_id, remote=account['remote'])
@@ -213,7 +214,7 @@ class Scheduler:
                               reason='已恢复非生图分组，重新观察首字延迟，仅统计切换后的调用')
             return
         self.store.update(account_id, last_checked=time.time())
-        samples = await client.samples(account_id, rule.sample_size, account['epoch'], account['watermark'])
+        samples = await Analytics(self.store, client).samples(account_id, rule.sample_size, account['epoch'], account['watermark'])
         slow = sum(item['first_token_ms'] > rule.threshold_ms for item in samples)
         sample_signature = [(item.get('id'), item.get('first_token_ms')) for item in samples]
         previous_signature = [(item.get('id'), item.get('first_token_ms')) for item in account.get('sample', [])]
@@ -514,7 +515,7 @@ class Scheduler:
                 raise UpstreamError('上游账号非 active，等待状态恢复后继续恢复分组调度')
             self.store.update(account['id'], remote=public_account(remote))
             account = self.store.account(account['id'])
-        watermark = await client.watermark(account['id'])
+        watermark = await Analytics(self.store, client).watermark(account['id'])
         await client.set_schedulable(account['id'], True)
         if restore_groups:
             remote = await client.account(account['id'])

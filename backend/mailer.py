@@ -21,11 +21,14 @@ def validate_mail(settings, recipients=True):
         raise MailError('请填写 SMTP 地址和发件邮箱')
     if settings.smtp_username and not settings.smtp_password:
         raise MailError('请填写 SMTP 密码或邮箱授权码')
+    if settings.smtp_username and not settings.smtp_use_tls:
+        raise MailError('SMTP 密码认证必须启用 TLS')
     if recipients and not settings.recipients:
         raise MailError('请至少配置一个收件邮箱')
 
 
 def smtp_send(settings, payload=None):
+    validate_mail(settings, recipients=payload is not None)
     client = None
     try:
         # macOS 的 Python 可能没有配置系统 CA 路径；使用虚拟环境的

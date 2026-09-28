@@ -9,6 +9,8 @@ import ImportHistory from './ImportHistory.vue'
 import MailNotifications from './MailNotifications.vue'
 import SystemUpgrade from './SystemUpgrade.vue'
 import AdminLogin from './AdminLogin.vue'
+import RateInspection from './RateInspection.vue'
+import PostgresSettings from './PostgresSettings.vue'
 
 const clone = value => JSON.parse(JSON.stringify(value))
 const nav = [
@@ -16,15 +18,17 @@ const nav = [
   { id: 'accounts', name: '账号号池', icon: Layers3 },
   { id: 'usage', name: '账号调用记录', icon: ListFilter },
   { id: 'import', name: '快速上号', icon: CloudUpload },
+  { id: 'rates', name: '用户倍率巡检', icon: Gauge },
   { id: 'rules', name: '调度规则', icon: SlidersHorizontal },
   { id: 'events', name: '操作日志', icon: Activity },
   { id: 'mail', name: '邮件通知', icon: Mail }
 ]
 const pools = [{ id: 'priority', name: '高权重组', desc: '核心账号，稳定交付', icon: Zap, color: 'purple' }, { id: 'risk', name: '风控组', desc: '独立归档，持续观察', icon: ShieldCheck, color: 'teal' }, { id: 'third_party', name: '三方账号组', desc: '外部资源，统一管理', icon: Layers3, color: 'blue' }]
-const routePaths = { overview: '/overview', accounts: '/accounts', usage: '/usage', import: '/import', rules: '/rules', events: '/events', mail: '/mail', settings: '/settings' }
+const routePaths = { overview: '/overview', accounts: '/accounts', usage: '/usage', import: '/import', rates: '/rate-inspection', rules: '/rules', events: '/events', mail: '/mail', settings: '/settings' }
 const pageFromPath = path => Object.entries(routePaths).find(([, route]) => route === path)?.[0] || 'overview'
 const page = ref(pageFromPath(globalThis.location?.pathname || '/'))
 const auth = ref({ ready: false, configured: false, authenticated: false, username: '' })
+const authStatusError = ref('')
 const syncingRoute = ref(false)
 const sidebarCollapsed = ref(globalThis.localStorage?.getItem('flowpool.sidebar.collapsed') === '1')
 const refreshIntervalSeconds = 10
@@ -149,7 +153,12 @@ const scheduleLabel = account => {
   return availabilityIssue(account) || (account.error ? account.state === 'pausing' ? '暂缓停调' : '状态异常' : guardWarning(account) ? '告警 · 继续调度' : statuses[account.state])
 }
 const ratio = a => a.sample.length ? Math.round(a.slow_count / a.sample.length * 100) : 0
-const title = computed(() => ({ overview: '调度总览', accounts: '账号号池', usage: '账号调用记录', import: '快速上号', rules: '调度规则', events: '操作日志', mail: '邮件通知', settings: '连接设置' }[page.value]))
+const title = computed(() => ({ overview: '调度总览', accounts: '账号号池', usage: '账号调用记录', import: '快速上号', rates: '用户倍率巡检', rules: '调度规则', events: '操作日志', mail: '邮件通知', settings: '连接设置' }[page.value]))
+
+function handleAuthExpired() {
+  auth.value = { ...auth.value, authenticated: false }
+  settings.value = null
+}
 
 function handlePopState() {
   syncingRoute.value = true
@@ -186,7 +195,7 @@ async function refresh() {
   try { data.value = await api('/dashboard'); loadError.value = '' } catch (error) { handleApiError(error); loadError.value = error.message }
 }
 async function loadUsage() {
-  if (!data.value.configured || usageLoading.value) return
+  if (!auth.value.authenticated || !data.value.configured || usageLoading.value) return
   usageLoading.value = true
   try {
     const result = await api('/usage/pools?limit=15')
@@ -199,7 +208,7 @@ async function loadUsage() {
   }
 }
 async function loadRanking() {
-  if (!data.value.configured || rankingLoading.value) return
+  if (!auth.value.authenticated || !data.value.configured || rankingLoading.value) return
   rankingLoading.value = true
   try {
     const result = await api('/usage/ranking')
@@ -222,13 +231,13 @@ async function loadWorkspace() {
     if (page.value === 'usage') await loadUsage()
   }
 }
-async function handleAuthenticated() {
-  auth.value = { ...auth.value, authenticated: true }
+async function handleAuthenticated(result) {
+  auth.value = { ...auth.value, authenticated: true, username: result.username }
   loadError.value = ''
   try { await loadWorkspace() } catch (error) { handleApiError(error); notify(error.message, true) }
 }
 async function logout() {
-  try { await api('/auth/logout', 'POST') } catch (error) { handleApiError(error) }
+  try { await api('/auth/logout', 'POST') } catch (error) { notify(error.message, true); return }
   auth.value = { ...auth.value, authenticated: false }
   settings.value = null
   data.value = { accounts: [], events: [], inspections: [], batches: [], worker: {}, configured: false }
@@ -392,22 +401,32 @@ function downloadExample() {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }))
   const link = document.createElement('a'); link.href = url; link.download = 'accounts.example.json'; link.click(); URL.revokeObjectURL(url)
 }
-onMounted(async () => {
-  globalThis.addEventListener('popstate', handlePopState)
+async function loadAuthStatus() {
+  authStatusError.value = ''
   try {
     const result = await api('/auth/status')
     auth.value = { ready: true, ...result }
     if (result.authenticated) await loadWorkspace()
-  } catch (error) { auth.value = { ready: true, configured: false, authenticated: false, username: '' }; notify(error.message, true) }
+  } catch (error) {
+    auth.value = { ready: true, configured: false, authenticated: false, username: '' }
+    authStatusError.value = error.message
+  }
+}
+onMounted(async () => {
+  window.addEventListener('flowpool-auth-expired', handleAuthExpired)
+  globalThis.addEventListener('popstate', handlePopState)
+  await loadAuthStatus()
   polling = setInterval(() => { void refresh(); if (page.value === 'usage') void loadUsage() }, refreshIntervalSeconds * 1000)
   rankingPolling = setInterval(() => { void loadRanking() }, 30000)
   clock = setInterval(() => { now.value = Date.now() / 1000 }, 1000)
 })
-onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); clearInterval(polling); clearInterval(rankingPolling); clearInterval(clock); clearTimeout(toastTimer) })
+onUnmounted(() => {
+  window.removeEventListener('flowpool-auth-expired', handleAuthExpired)
+  globalThis.removeEventListener('popstate', handlePopState); clearInterval(polling); clearInterval(rankingPolling); clearInterval(clock); clearTimeout(toastTimer) })
 </script>
 
 <template>
-  <AdminLogin v-if="auth.ready && !auth.authenticated" :configured="auth.configured" @authenticated="handleAuthenticated"/>
+  <AdminLogin v-if="auth.ready && !auth.authenticated" :configured="auth.configured" :status-error="authStatusError" @retry-status="loadAuthStatus" @authenticated="handleAuthenticated"/>
   <div v-else-if="auth.ready" :class="['app-shell', { 'sidebar-collapsed': sidebarCollapsed }]">
     <aside class="sidebar">
       <a href="#" class="brand" @click.prevent="page = 'overview'"><img class="brand-mark" src="/favicon.svg" alt="" width="40" height="40"/><span>FlowPool<small>GPT 账号调控</small></span></a>
@@ -439,7 +458,7 @@ onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); 
             <section v-if="page === 'overview'" class="panel recent-events"><div class="panel-heading"><h2>最近动态</h2><button class="text-button" @click="page = 'events'">全部日志<ArrowRight :size="14"/></button></div><div v-if="!data.events.length" class="quiet-empty">暂时没有操作记录。一切从连接你的服务开始。</div><div v-for="event in data.events.slice(0, 4)" :key="event.id" class="event-row"><span :class="['event-dot', event.level]"><Check :size="12"/></span><span>{{ event.message }}</span><small v-if="event.account_id">#{{ event.account_id }}</small><time>{{ timeText(event.created_at) }}</time></div></section>
           </template>
 
-          <template v-if="page === 'settings'"><div class="connection-settings-grid"><form class="settings-layout" @submit.prevent="saveSettings"><section class="panel form-panel"><div class="card-title"><div class="tinted-icon"><Unplug :size="21"/></div><div><h2>Sub2API 连接</h2><p>所有远端操作均通过管理员接口执行</p></div><span :class="['badge', settings.key_configured ? 'success' : 'neutral']">{{ settings.key_configured ? 'Key 已设置' : '待配置' }}</span></div><label>Sub2API 地址<input v-model.trim="settings.base_url" type="url" placeholder="https://your-sub2api.example.com" required/><small>填写服务根地址，也支持以 /api/v1 结尾。</small></label><label>管理员 API Key<input v-model="settings.admin_key" type="password" autocomplete="new-password" :placeholder="settings.key_configured ? '已设置，留空保持不变' : '输入 Sub2API 管理员 API Key'"/><small>在 Sub2API 后台生成，用于 /api/v1/admin/*。</small></label><label>鉴权方式<input value="X-API-Key · 管理员 Key" disabled/></label><div class="form-actions"><button class="button primary" :disabled="busy"><Check :size="16"/>保存设置</button><button type="button" class="button" :disabled="busy" @click="testConnection"><RefreshCw :size="16"/>测试连接</button></div></section><aside class="help-panel"><ShieldCheck :size="26"/><h3>你的服务，你的数据</h3><p>管理员 Key 加密保存于本机，页面不会回显。账号分类与调度状态存储在独立的 SQLite 数据库。</p><div class="help-line"><CheckCheck :size="16"/>仅管理 GPT / OpenAI 平台</div><div class="help-line"><CheckCheck :size="16"/>已有账号录入仅保存本地分类</div><div class="help-line"><CheckCheck :size="16"/>不通过页面传输管理员 Key 到第三方</div><hr/><p>本地服务默认仅监听 127.0.0.1。此版本面向单机管理员使用。</p></aside></form><section class="panel form-panel defaults-panel"><div class="card-title"><div><h2>默认上号参数</h2><p>保存后用于下一次打开快速上号页面</p></div></div><form @submit.prevent="saveSettings"><ImportOptions :model="settings.import_options" :groups="metadata.groups" :proxies="metadata.proxies" :busy="busy" @refresh="action(loadMetadata)"/><div class="form-actions"><button class="button primary" :disabled="busy">保存默认参数</button><button type="button" class="button" @click="importOptions = clone(settings.import_options); page = 'import'">使用这些参数上号<ArrowRight :size="15"/></button></div></form></section></div></template>
+          <template v-if="page === 'settings'"><div class="connection-settings-grid"><form class="settings-layout" @submit.prevent="saveSettings"><section class="panel form-panel"><div class="card-title"><div class="tinted-icon"><Unplug :size="21"/></div><div><h2>Sub2API 连接</h2><p>所有远端操作均通过管理员接口执行</p></div><span :class="['badge', settings.key_configured ? 'success' : 'neutral']">{{ settings.key_configured ? 'Key 已设置' : '待配置' }}</span></div><label>Sub2API 地址<input v-model.trim="settings.base_url" type="url" disabled placeholder="https://your-sub2api.example.com" required/><small>与管理员登录共用同一后端。切换地址需在服务器配置 FLOWPOOL_SUB2API_URL 并重启。</small></label><label>管理员 API Key<input v-model="settings.admin_key" type="password" autocomplete="new-password" :placeholder="settings.key_configured ? '已设置，留空保持不变' : '输入 Sub2API 管理员 API Key'"/><small>在 Sub2API 后台生成，用于 /api/v1/admin/*。</small></label><label>鉴权方式<input value="X-API-Key · 管理员 Key" disabled/></label><div class="form-actions"><button class="button primary" :disabled="busy"><Check :size="16"/>保存设置</button><button type="button" class="button" :disabled="busy" @click="testConnection"><RefreshCw :size="16"/>测试连接</button></div></section><aside class="help-panel"><ShieldCheck :size="26"/><h3>你的服务，你的数据</h3><p>管理员 Key 加密保存于本机，页面不会回显。账号分类与调度状态存储在独立的 SQLite 数据库。</p><div class="help-line"><CheckCheck :size="16"/>仅管理 GPT / OpenAI 平台</div><div class="help-line"><CheckCheck :size="16"/>已有账号录入仅保存本地分类</div><div class="help-line"><CheckCheck :size="16"/>不通过页面传输管理员 Key 到第三方</div><hr/><p>本地服务默认仅监听 127.0.0.1。此版本面向单机管理员使用。</p></aside></form><PostgresSettings @notify="notify"/><section class="panel form-panel defaults-panel"><div class="card-title"><div><h2>默认上号参数</h2><p>保存后用于下一次打开快速上号页面</p></div></div><form @submit.prevent="saveSettings"><ImportOptions :model="settings.import_options" :groups="metadata.groups" :proxies="metadata.proxies" :busy="busy" @refresh="action(loadMetadata)"/><div class="form-actions"><button class="button primary" :disabled="busy">保存默认参数</button><button type="button" class="button" @click="importOptions = clone(settings.import_options); page = 'import'">使用这些参数上号<ArrowRight :size="15"/></button></div></form></section></div></template>
 
           <template v-if="page === 'rules'"><form @submit.prevent="saveSettings"><section class="panel form-panel"><div class="card-title"><div class="tinted-icon"><ShieldCheck :size="22"/></div><div><h2>首字延迟守护</h2><p>对选中的本地号池自动采样、暂停、冷却和恢复观察</p></div><label class="check-row"><input v-model="settings.rule.enabled" type="checkbox"/>开启自动调度</label><label class="check-row"><input v-model="settings.rule.alert_only" type="checkbox"/>只告警，不自动冷却</label></div><fieldset class="guard-pools"><legend>需要守护的分组（可多选）</legend><div class="guard-pool-options"><label v-for="pool in pools" :key="pool.id" class="check-row"><input v-model="settings.rule.guarded_pools" type="checkbox" :value="pool.id" :disabled="busy"/>{{ pool.name }}</label></div><small>选中的分组共用下方规则，保存后生效；不选分组时停止新的自动判断。取消守护后，已有冷却仍会按时恢复。</small></fieldset><div class="notice compact"><CircleHelp :size="15"/><span>冷却前先检查高权重组：已有可用账号正在调度则不启用新账号；否则优先启用三方账号，三方无可用账号则启用高权重账号。两组均无可用账号时，当前账号继续调度，不进入冷却。</span></div><div class="flow-diagram"><div><span class="flow-num">01</span><Activity :size="22"/><strong>监测调用</strong><small>5 分钟内最近 {{ settings.rule.sample_size }} 条有效样本</small></div><ArrowRight :size="19"/><div><span class="flow-num">02</span><Pause :size="22"/><strong>{{ settings.rule.alert_only ? '达限后继续调度' : '达限累计后冷却' }}</strong><small>{{ settings.rule.alert_only ? '只记录告警，不停止调度' : `${settings.rule.breach_count} 次后冷却，${settings.rule.cooldown_seconds / 60} 分钟后恢复` }}</small></div><ArrowRight :size="19"/><div><span class="flow-num">03</span><ShieldCheck :size="22"/><strong>恢复观察</strong><small>{{ settings.rule.probation_seconds }} 秒，仅看新调用</small></div><ArrowRight :size="19"/><div><span class="flow-num">04</span><Zap :size="22"/><strong>继续调度</strong><small>{{ settings.rule.alert_only ? '持续记录达限告警' : '达限次数达标才重新冷却' }}</small></div></div><div class="form-grid rules-fields"><label>采样窗口（条）<input v-model.number="settings.rule.sample_size" type="number" min="1" max="100" required/><small>固定统计最近 5 分钟，正常阶段需凑满样本才判断</small></label><label>首字延迟阈值（毫秒）<input v-model.number="settings.rule.threshold_ms" type="number" min="100" max="300000" required/><small>严格大于阈值的调用才记为慢调用</small></label><label>慢调用比例阈值（0–1）<input v-model.number="settings.rule.slow_ratio" type="number" min="0" max="1" step="0.01" required/><small>占比达到或超过阈值计一次达限，0.5 表示 50%</small></label><label>达限滚动窗口（秒）<input v-model.number="settings.rule.breach_window_seconds" type="number" min="10" max="86400" required/><small>默认 120 秒，窗口随当前时间滚动，过期达限自动失效</small></label><label>窗口内停调次数<input v-model.number="settings.rule.breach_count" type="number" min="1" max="100" required/><small>默认 2 次；再次计次需同时满足间隔和新样本要求</small></label><label>计次最小间隔（秒）<input v-model.number="settings.rule.breach_min_interval_seconds" type="number" min="1" max="3600" required/><small>默认 30 秒，从上次实际计次开始计算</small></label><label>再次计次新样本比例（0–1）<input v-model.number="settings.rule.breach_fresh_ratio" type="number" min="0.01" max="1" step="0.01" required/><small>默认 50%，至少 {{ Math.ceil(settings.rule.sample_size * settings.rule.breach_fresh_ratio) }} 条新调用；按配置样本量向上取整</small></label><label>冷却时长（秒）<input v-model.number="settings.rule.cooldown_seconds" type="number" min="10" max="86400" required/><small>默认 1200 秒，每次固定 20 分钟，不随次数递增</small></label><label>恢复观察时长（秒）<input v-model.number="settings.rule.probation_seconds" type="number" min="10" max="3600" required/><small>观察到期后按新样本累计达限；恢复时清空旧次数</small></label><label>检查间隔（秒）<input v-model.number="settings.rule.poll_seconds" type="number" min="5" max="300" required/><small>单轮完成后等待此间隔，再开始下一轮</small></label></div><div class="notice"><CircleHelp :size="18"/><span>只有选中的号池参与首字延迟自动判断；总开关关闭时停止新的自动判断。调用有效统计窗口固定为最近 5 分钟，窗口外的历史调用不参与判断；没有有效调用时清除告警。<template v-if="settings.rule.alert_only">当前为仅告警模式，达限累计仍会记录并发送告警，但不会停止调度。</template><template v-else>达限先告警，滚动窗口内次数达标才冷却。每次冷却固定等待 {{ settings.rule.cooldown_seconds / 60 }} 分钟后恢复，不随冷却次数递增。三方账号保持调度，仅绑定正常的「生图」分组；冷却结束或手动结束冷却后，重新绑定所有正常状态的 GPT 分组。风控组及高权重组冷却仍停止调度。</template>再次计次必须同时满足最小间隔和新样本比例；新样本相对上次实际计次的调用 ID 水位判断，数量按配置样本量向上取整，恢复观察阶段也不降低新样本要求。三方账号另检查认证状态（包含仅生图账号）：守护总开关开启时，已保存账密的账号发生 401 / 认证失效会自动重登；JSON 或历史未保存账密账号需手动处理。每次重登至少间隔 5 分钟；连续失败超过 3 次（第 4 次失败）后放弃自动重登，重启或等待不解除。成功重登后清零失败次数；已放弃账号需人工成功重登后恢复。手动暂停或配置变化导致的取消不计为失败。三方冷却期间不采样，不会因调度开关保持开启而提前结束冷却；生图分组缺失或非正常状态时不执行分组切换。次数过期不会把相同样本重新计次；恢复调度或修改达限规则后重新累计达限次数。自动冷却前只检查上游「Pro号池」是否有其它可用的本地托管账号，不要求覆盖当前账号的其它上游分组。所有守护分组采用相同替补规则：优先复用正在调度的高权重账号，否则选择三方账号，再选择高权重账号，不选择风控账号作为替补。候选须为 active、未限流且不在本地冷却或状态切换中，手动暂停账号可被启用。三方已有可用账号调度时直接复用。两组均不可用或启用失败时不允许冷却。进入冷却后只复核本次保障账号一次，复核失败则恢复当前账号；冷却期间不再检查替补。恢复后同时应用 5 分钟窗口、新的时间边界与记录 ID 水位，排除旧调用和恢复前在途请求。观察通过后也保留边界，防止旧慢调用再次触发。所有号池均可手动暂停 / 恢复。</span></div><div class="form-actions"><button class="button primary" :disabled="busy"><Check :size="16"/>保存调度规则</button></div></section></form>
             <section class="panel cooldown-panel" aria-labelledby="cooldown-title">
@@ -468,8 +487,9 @@ onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); 
             <ImportHistory :revision="historyRevision" :batches="data.batches" :busy="busy || loginLoading" :configured="data.configured" @select="selectBatch" @relogin="(sourceBatch, item) => openRelogin(item, sourceBatch)" @discard="discardBatch" @checked="batchChecked"/>
           </div></div></template>
 
+          <RateInspection v-if="page === 'rates'" @notify="notify"/>
           <MailNotifications v-if="page === 'mail'" @notify="notify"/>
-          <section v-if="page === 'events'" class="panel"><div class="panel-heading"><h2>调度与操作记录</h2><button class="button" @click="refresh"><RefreshCw :size="15"/>刷新 · 每 {{ refreshIntervalSeconds }} 秒</button></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>级别</th><th>账号</th><th>操作</th><th>详情</th></tr></thead><tbody><tr v-for="event in data.events" :key="event.id"><td class="muted small">{{ timeText(event.created_at) }}</td><td><span :class="['badge', event.level === 'info' ? 'success' : 'warning']">{{ { info: '信息', warning: '提醒', error: '异常' }[event.level] }}</span></td><td>{{ event.account_id ? '#' + event.account_id : '系统' }}</td><td>{{ { settings: '更新设置', mail_settings: '邮件配置', mail_error: '邮件异常', auto_relogin: '自动重登', auto_relogin_error: '自动重登失败', image_cooldown: '冷却 · 仅生图调度', pause: '暂停调度', resume: '恢复调度', healthy: '观察通过', replacement: '启用替补调度', enroll: '录入号池', remove: '移出号池', import: '推送账号', upstream_error: '接口异常', worker_error: '调度异常' }[event.action] || event.action }}</td><td>{{ event.message }}</td></tr></tbody></table></div><div v-if="!data.events.length" class="empty-state"><Activity :size="28"/><h3>还没有操作日志</h3><p>连接、上号与调度决策会在这里留下记录。</p></div></section>
+          <section v-if="page === 'events'" class="panel"><div class="panel-heading"><h2>调度与操作记录</h2><button class="button" @click="refresh"><RefreshCw :size="15"/>刷新 · 每 {{ refreshIntervalSeconds }} 秒</button></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>级别</th><th>账号</th><th>操作</th><th>详情</th></tr></thead><tbody><tr v-for="event in data.events" :key="event.id"><td class="muted small">{{ timeText(event.created_at) }}</td><td><span :class="['badge', event.level === 'info' ? 'success' : 'warning']">{{ { info: '信息', warning: '提醒', error: '异常' }[event.level] }}</span></td><td>{{ event.account_id ? '#' + event.account_id : '系统' }}</td><td>{{ { settings: '更新设置', rate_correction: '用户倍率纠正', rate_rules: '充值档位规则', postgres_settings: '数据库连接设置', mail_settings: '邮件配置', mail_error: '邮件异常', auto_relogin: '自动重登', auto_relogin_error: '自动重登失败', image_cooldown: '冷却 · 仅生图调度', pause: '暂停调度', resume: '恢复调度', healthy: '观察通过', replacement: '启用替补调度', enroll: '录入号池', remove: '移出号池', import: '推送账号', upstream_error: '接口异常', worker_error: '调度异常' }[event.action] || event.action }}</td><td>{{ event.message }}</td></tr></tbody></table></div><div v-if="!data.events.length" class="empty-state"><Activity :size="28"/><h3>还没有操作日志</h3><p>连接、上号与调度决策会在这里留下记录。</p></div></section>
           <section v-if="page === 'usage'" class="panel usage-panel">
             <div class="panel-heading usage-heading">
               <div><h2>账号调用记录 <span class="count-chip">{{ usageTotal }}</span></h2><p>三类本地号池同时展示最新调用记录</p></div>
@@ -485,9 +505,9 @@ onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); 
         <footer class="page-footer"><span><Database :size="13"/>数据保存在本机 · SQLite</span><span>自动调度，让账号各得其时。</span></footer>
       </div>
     </main>
-    <aside v-if="settings" class="ranking-sidebar" aria-label="调用占比排名">
-      <button v-if="!rankingOpen" class="button ranking-toggle" type="button" aria-controls="usage-ranking-sidebar" aria-expanded="false" @click="rankingOpen = true"><ListFilter :size="16"/>调用占比排名</button>
-      <section v-if="rankingOpen" id="usage-ranking-sidebar" class="panel ranking-panel"><div class="panel-heading"><div><h2>调用占比排名</h2><p>最新 {{ rankingSampleSize }} 条调用 · {{ rankingRefreshText }}</p></div><button class="icon-button" type="button" aria-label="收起调用占比排名" @click="rankingOpen = false"><X :size="16"/></button></div><div class="ranking-list"><div v-for="(item, index) in ranking" :key="item.account_id" class="ranking-row"><span class="ranking-index">{{ index + 1 }}</span><div class="ranking-account"><strong>{{ item.account_name }}</strong><small>#{{ item.account_id }} · {{ poolName(item.pool) }} · {{ statuses[item.state] || item.state }}</small></div><strong class="ranking-share">{{ item.share.toFixed(1) }}%</strong></div><p v-if="!ranking.length" class="quiet-empty">暂无本地托管账号</p></div></section>
+    <aside v-if="settings && !['rates', 'settings'].includes(page)" class="ranking-sidebar" aria-label="调用占比排名">
+      <button v-if="!rankingOpen && page !== 'rates'" class="button ranking-toggle" type="button" aria-controls="usage-ranking-sidebar" aria-expanded="false" @click="rankingOpen = true"><ListFilter :size="16"/>调用占比排名</button>
+      <section v-if="rankingOpen && page !== 'rates'" id="usage-ranking-sidebar" class="panel ranking-panel"><div class="panel-heading"><div><h2>调用占比排名</h2><p>最新 {{ rankingSampleSize }} 条调用 · {{ rankingRefreshText }}</p></div><button class="icon-button" type="button" aria-label="收起调用占比排名" @click="rankingOpen = false"><X :size="16"/></button></div><div class="ranking-list"><div v-for="(item, index) in ranking" :key="item.account_id" class="ranking-row"><span class="ranking-index">{{ index + 1 }}</span><div class="ranking-account"><strong>{{ item.account_name }}</strong><small>#{{ item.account_id }} · {{ poolName(item.pool) }} · {{ statuses[item.state] || item.state }}</small></div><strong class="ranking-share">{{ item.share.toFixed(1) }}%</strong></div><p v-if="!ranking.length" class="quiet-empty">暂无本地托管账号</p></div></section>
     </aside>
 
     <ReloginAccount v-if="page === 'import' && relogin" :batch="relogin.batch" :item="relogin.item" :source="relogin.source" @close="relogin = null" @loading="loginLoading = $event" @updated="reloginUpdated"/>
