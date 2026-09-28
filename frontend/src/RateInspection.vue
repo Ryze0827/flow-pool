@@ -122,20 +122,20 @@ onUnmounted(() => controller?.abort())
   <div class="rate-inspection">
     <section class="panel form-panel">
       <div class="card-title"><div><h2>充值档位规则</h2><p>按历史累计正向充值匹配最高档位，包含管理员加款，扣款不冲减累计值。</p></div></div>
-      <p class="muted">仅检查所选分组，尊重用户分组访问权限。<template v-if="rules">当前已保存规则：未满 {{ format(lowestMinimum) }} 美元不调整倍率。</template></p>
+      <p class="muted">仅展示和检查 GPT / OpenAI 分组，尊重用户分组访问权限。<template v-if="rules">当前已保存规则：未满 {{ format(lowestMinimum) }} 美元不调整倍率。</template></p>
       <p v-if="rulesError" class="notice error" role="alert">{{ rulesError }} <button v-if="!rules" class="text-button" @click="loadRules">重试</button></p>
       <p v-if="!rules && !rulesError" class="muted">正在读取充值档位…</p>
       <form v-if="draftRules" @submit.prevent="saveRules">
         <fieldset class="group-picker" :disabled="busy || correcting || savingRules || groupsLoading">
           <legend>适用分组 · 已选 {{ chosenGroupIds.length }} 个</legend>
-          <div class="group-tools"><input v-model="groupSearch" type="search" placeholder="搜索分组名称、ID 或平台" aria-label="搜索适用分组"/><button class="button" type="button" @click="loadGroups"><RefreshCw :size="15"/>刷新分组</button></div>
+          <div class="group-tools"><input v-model="groupSearch" type="search" placeholder="搜索 GPT 分组名称或 ID" aria-label="搜索适用分组"/><button class="button" type="button" @click="loadGroups"><RefreshCw :size="15"/>刷新分组</button></div>
           <p v-if="groupsLoading" class="small muted" role="status">正在读取分组…</p>
           <p v-if="groupsError" class="notice error" role="alert">{{ groupsError }}</p>
           <div class="group-options">
             <label v-for="group in matchingGroups" :key="group.id" class="group-option"><input type="checkbox" :checked="chosenGroupIds.includes(group.id)" :disabled="!chosenGroupIds.includes(group.id) && chosenGroupIds.length >= 200" @change="toggleGroup(group.id, $event.target.checked)"/><span>{{ group.name }}<small>#{{ group.id }}<template v-if="group.platform"> · {{ group.platform }}</template></small></span></label>
           </div>
           <p v-if="!groupsLoading && !groupsError && !matchingGroups.length" class="small muted">{{ groups.length ? '没有匹配的分组。' : '没有可用分组，请先在 Sub2API 中创建或启用分组。' }}</p>
-          <p v-for="id in missingGroupIds" :key="id" class="notice error">分组 #{{ id }} 已停用或不存在。<button type="button" class="text-button" @click="toggleGroup(id, false)">移除选择</button></p>
+          <p v-for="id in missingGroupIds" :key="id" class="notice error">分组 #{{ id }} 已停用、不存在或非 GPT 分组。<button type="button" class="text-button" @click="toggleGroup(id, false)">移除选择</button></p>
           <p class="small muted">至少选择 1 个分组，最多 200 个；所选分组共用下方充值档位。</p>
           <p v-if="!groupsLoading && !groupsError" class="small muted">{{ rules.group_ids === null ? '默认适用分组' : '已保存适用分组' }}：{{ savedGroupNames || '未选择' }}</p>
         </fieldset>

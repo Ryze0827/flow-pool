@@ -18,7 +18,7 @@ from .sub2api import Sub2API, UpstreamError
 
 GROUP_NAMES = {'Pro号池', 'Pro号池 (强制开启Fast)'}
 SNAPSHOT_TTL = 30 * 60
-GROUPS_SQL = "SELECT id, name, platform FROM groups WHERE deleted_at IS NULL AND status='active' ORDER BY id"
+GROUPS_SQL = "SELECT id, name, platform FROM groups WHERE deleted_at IS NULL AND status='active' AND platform='openai' ORDER BY id"
 
 # Same aggregate as Sub2API SumPositiveBalanceByUser: no balance counter, status
 # filter, affiliate credits, negative values or deleted users. All inputs bind.
@@ -43,7 +43,7 @@ SELECT u.id AS user_id, u.username, u.email, COALESCE(r.total, 0) AS total,
 FROM target_users u LEFT JOIN recharge r ON r.used_by = u.id
 CROSS JOIN groups g
 LEFT JOIN user_group_rate_multipliers m ON m.user_id = u.id AND m.group_id = g.id
-WHERE g.id = ANY(%(group_ids)s::bigint[]) AND g.deleted_at IS NULL AND g.status = 'active'
+WHERE g.id = ANY(%(group_ids)s::bigint[]) AND g.deleted_at IS NULL AND g.status = 'active' AND g.platform = 'openai'
 ORDER BY u.id, g.id
 '''
 
@@ -69,18 +69,19 @@ def expected_rate(total, rules):
 
 
 def default_groups(groups):
-    return [group for group in groups if unicodedata.normalize('NFKC', group['name']).strip() in GROUP_NAMES]
+    return [group for group in groups if group.get('platform') == 'openai' and unicodedata.normalize('NFKC', group['name']).strip() in GROUP_NAMES]
 
 
 def select_groups(groups, rules):
+    groups = [group for group in groups if group.get('platform') == 'openai']
     if rules.group_ids is None:
         selected = default_groups(groups)
     else:
         selected = [group for group in groups if group['id'] in rules.group_ids]
         if set(rules.group_ids) != {group['id'] for group in selected}:
-            raise HTTPException(409, '所选巡检分组已停用或不存在，请更新充值档位规则中的分组')
+            raise HTTPException(409, '所选巡检分组已停用、不存在或不属于 GPT / OpenAI 平台，请更新充值档位规则中的分组')
     if not selected:
-        raise HTTPException(409, '请在充值档位规则中选择至少一个正常分组')
+        raise HTTPException(409, '请在充值档位规则中选择至少一个正常的 GPT / OpenAI 分组')
     return selected
 
 
@@ -148,8 +149,9 @@ class RateInspection:
                 groups = await cursor.fetchall()
         else:
             async with Sub2API(self.store.settings()) as client:
-                groups = [group for group in await client.all('groups')
-                          if group.get('status') == 'active' and not group.get('deleted_at')]
+                groups = [group for group in await client.all('groups', platform='openai')
+                          if group.get('platform') == 'openai' and group.get('status') == 'active' and not group.get('deleted_at')]
+        groups = [group for group in groups if group.get('platform') == 'openai']
         # The group API contains internal settings; expose only selector metadata.
         return {'items': [{'id': group['id'], 'name': group['name'], 'platform': group.get('platform', '')}
                           for group in groups], 'default_group_ids': [group['id'] for group in default_groups(groups)]}
@@ -158,8 +160,8 @@ class RateInspection:
         # Compatibility mode: use the server's lifetime aggregate, never infer
         # recharge from balance or a partial page of balance-history items.
         async with Sub2API(self.store.settings()) as client:
-            groups = select_groups([group for group in await client.all('groups')
-                                    if group.get('status') == 'active' and not group.get('deleted_at')], rules)
+            groups = select_groups([group for group in await client.all('groups', platform='openai')
+                                    if group.get('platform') == 'openai' and group.get('status') == 'active' and not group.get('deleted_at')], rules)
             overrides = {}
             for group in groups:
                 entries = await client.request('GET', f"groups/{group['id']}/rate-multipliers")
