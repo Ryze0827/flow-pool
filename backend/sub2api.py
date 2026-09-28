@@ -125,7 +125,7 @@ class Sub2API:
     async def metadata(self):
         groups = await self.all('groups', platform='openai')
         proxies = await self.request('GET', 'proxies/all')
-        return {'groups': [{'id': g['id'], 'name': g['name'], 'status': g['status']} for g in groups if g.get('platform') == 'openai'], 'proxies': [{'id': p['id'], 'name': p['name']} for p in proxies]}
+        return {'groups': [{'id': g['id'], 'name': g['name'], 'status': g['status']} for g in groups if g.get('platform') == 'openai' and g.get('status') == 'active'], 'proxies': [{'id': p['id'], 'name': p['name']} for p in proxies]}
 
     async def cooldown_groups(self, image_only=False):
         groups = [group for group in await self.all('groups', platform='openai')

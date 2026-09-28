@@ -1,7 +1,26 @@
 <script setup>
+import { computed } from 'vue'
 import { Plus, RefreshCw, X } from 'lucide-vue-next'
-defineProps({ model: Object, groups: Array, proxies: Array, busy: Boolean })
+const props = defineProps({ model: Object, groups: Array, proxies: Array, busy: Boolean })
 defineEmits(['refresh'])
+
+const allGroupsSelected = computed(() => props.groups.length > 0 && props.groups.every(group => props.model.group_ids.includes(group.id)))
+
+function toggleAllGroups() {
+  const ids = new Set(props.groups.map(group => group.id))
+  props.model.group_ids = allGroupsSelected.value
+    ? props.model.group_ids.filter(id => !ids.has(id))
+    : [...new Set([...props.model.group_ids, ...ids])]
+}
+
+function applyPresetMappings() {
+  const mappings = props.model.model_mappings ||= []
+  for (const [source, target] of [['gpt-5.6-luna', 'gpt-5.6-sol'], ['gpt-5.6-terra', 'gpt-5.6-sol'], ['gpt-6-luna', 'gpt-6-sol']]) {
+    const existing = mappings.find(item => item.source === source)
+    if (existing) existing.target = target
+    else if (mappings.length < 200) mappings.push({ source, target })
+  }
+}
 </script>
 
 <template>
@@ -13,10 +32,11 @@ defineEmits(['refresh'])
     <label>负载因子<input v-model.number="model.load_factor" type="number" min="1" max="10000" required /></label>
     <label>本地号池<select v-model="model.pool"><option value="priority">高权重组</option><option value="risk">风控组</option><option value="third_party">三方账号组</option></select></label>
     <label>Sub2API 代理<select v-model="model.proxy_id"><option :value="null">不设置</option><option v-for="proxy in proxies" :key="proxy.id" :value="proxy.id">{{ proxy.name }}</option></select></label>
-    <div class="span-2"><div class="field-title">Sub2API 分组 <small>GPT 平台，可多选</small><button class="text-button" type="button" :disabled="busy" @click="$emit('refresh')"><RefreshCw :size="13" />读取分组 / 代理</button></div>
+    <div class="span-2"><div class="field-title">Sub2API 分组 <small>GPT 平台，可多选</small><button class="text-button" type="button" :disabled="busy || !groups.length" @click="toggleAllGroups">{{ allGroupsSelected ? '取消全选' : '全选' }}</button><button class="text-button" type="button" :disabled="busy" @click="$emit('refresh')"><RefreshCw :size="13" />读取分组 / 代理</button></div>
       <div class="group-picker"><label v-for="group in groups" :key="group.id" class="check-row"><input v-model="model.group_ids" type="checkbox" :value="group.id"/><span>{{ group.name }}</span><small>#{{ group.id }}{{ group.status === 'inactive' ? ' · 已停用' : '' }}</small></label><p v-if="!groups.length" class="muted">先连接 Sub2API，读取 GPT 平台分组。</p></div>
     </div>
     <div class="span-2 model-mappings">
+      <button class="text-button" type="button" :disabled="busy" @click="applyPresetMappings">应用预置映射</button>
       <div class="field-title">模型映射 <small>JSON / 账密上号共用</small><button class="text-button" type="button" :disabled="busy || model.model_mappings?.length >= 200" @click="(model.model_mappings ||= []).push({ source: '', target: '' })"><Plus :size="13" />添加映射</button></div>
       <div v-for="(mapping, index) in model.model_mappings" :key="index" class="mapping-row">
         <input v-model="mapping.source" :aria-label="`第 ${index + 1} 条请求模型`" placeholder="请求模型，如 gpt-*" maxlength="200" :disabled="busy" required />

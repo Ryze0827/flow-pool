@@ -24,6 +24,27 @@ def recovery_material(value, options):
             'workspace_id': value.workspace_id, 'provider': value.provider, 'options': options.model_dump()}
 
 
+def recovery_note(recovery):
+    if not recovery:
+        return ''
+    return '----'.join((recovery['email'], recovery['password'], recovery.get('totp_secret', '')))
+
+
+def recovery_from_note(note):
+    if not isinstance(note, str):
+        return None
+    for line in note.splitlines():
+        parts = line.strip().split('----')
+        if len(parts) != 3 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', parts[0]) or not parts[1]:
+            continue
+        secret = parts[2].strip()
+        if re.fullmatch(r'\d{6}', secret):
+            return None
+        return {'email': parts[0], 'password': parts[1], 'totp_secret': secret,
+                'workspace_id': '', 'provider': 'session_studio'}
+    return None
+
+
 def token_claims(token):
     # 仅提取导入元信息，不将未验证 JWT 用于鉴权。
     try:
@@ -210,14 +231,20 @@ class Importer:
                         item['account_id'] = matches[0]['id']
                         item['status'] = 'updating'
                         self.store.save_batch(batch)
+                        if item.get('recovery'):
+                            item['payload']['notes'] = recovery_note(item['recovery'])
                         await client.request('PUT', f"accounts/{item['account_id']}", json=item['payload'])
                     else:
                         item['status'] = 'creating'
                         self.store.save_batch(batch)
+                        if item.get('recovery'):
+                            item['payload']['notes'] = recovery_note(item['recovery'])
                         remote = await client.request('POST', 'accounts', json=item['payload'], headers={'Idempotency-Key': f"scheduler-{batch['id']}-{item['index']}"})
                         item['account_id'] = remote['id']
                         existing.append(remote)
                 elif item['status'] == 'updating':
+                    if item.get('recovery'):
+                        item['payload']['notes'] = recovery_note(item['recovery'])
                     await client.request('PUT', f"accounts/{item['account_id']}", json=item['payload'])
                 item['status'] = 'created'
                 self.store.save_batch(batch)

@@ -86,7 +86,7 @@ onUnmounted(() => {
   <section class="panel form-panel login-panel">
     <div class="card-title"><div class="tinted-icon"><ShieldCheck :size="20"/></div><div><h2>账密批量上号</h2><p>每行一个账号，后台逐个登录，汇总成功账号后确认入池</p></div></div>
     <form @submit.prevent="login(false)">
-      <div class="login-channel"><label>登录通道<select v-model="provider" :disabled="busy || loading"><option value="local">本地登录</option><option value="session_studio">Session Studio</option></select></label><p v-if="provider === 'session_studio'" class="small muted">登录信息将发送至 session.ameng2027.xyz；如需额外人机 / 邮箱 / 手机验证，请到该网站完成。</p></div>
+      <div class="login-channel"><label>登录通道<select v-model="provider" :disabled="busy || loading"><option value="local">本地登录</option><option value="session_studio">Session Studio</option></select></label></div>
       <div class="quick-parse"><label>粘贴账号列表 <small>每行：邮箱----密码----2FA密钥 · 最多 500 个账号</small><textarea v-model="quickSource" rows="4" :disabled="loading" spellcheck="false" autocomplete="off" aria-label="批量账号列表"></textarea><small>未启用 2FA 时保留末尾 ----，密钥留空。空行自动忽略。</small></label></div>
       <p v-if="error" class="notice error" role="alert">{{ error }}</p>
       <div class="form-actions"><button class="button primary" :disabled="busy || loading || !configured || !options?.group_ids?.length || !quickSource.trim()"><LoaderCircle v-if="loading" :size="16" class="spinning"/><ShieldCheck v-else :size="16"/>{{ loading ? `正在处理 ${finishedCount} / ${rows.length}` : '批量登录并预览入池' }}</button><button v-if="failedCount" type="button" class="button" :disabled="busy || loading || !configured || quickSource !== submittedSource" @click="login(true)">重试失败账号（原通道）</button></div>

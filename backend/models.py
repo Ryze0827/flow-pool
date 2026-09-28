@@ -22,7 +22,7 @@ class Rule(BaseModel):
     breach_fresh_ratio: float = Field(0.5, gt=0, le=1)
     cooldown_seconds: int = Field(1200, ge=10, le=86400)
     probation_seconds: int = Field(60, ge=10, le=3600)
-    poll_seconds: int = Field(15, ge=5, le=300)
+    poll_seconds: int = Field(20, ge=5, le=300)
 
 
 class MailSettings(BaseModel):
@@ -131,7 +131,11 @@ class Settings(BaseModel):
     base_url: str = ''
     admin_key: str = Field('', max_length=4096)
     rule: Rule = Field(default_factory=Rule)
-    import_options: ImportOptions = Field(default_factory=ImportOptions)
+    import_options: ImportOptions = Field(default_factory=lambda: ImportOptions(model_mappings=[
+        ModelMapping(source='gpt-5.6-luna', target='gpt-5.6-sol'),
+        ModelMapping(source='gpt-5.6-terra', target='gpt-5.6-sol'),
+        ModelMapping(source='gpt-6-luna', target='gpt-6-sol'),
+    ]))
     usage_visible_columns: list[UsageColumn] = Field(default_factory=list, max_length=3)
 
     @field_validator('base_url')

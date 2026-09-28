@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .importer import Importer, normalize, public_batch, recovery_material
+from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
 from .models import Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, Settings
@@ -299,6 +299,35 @@ async def usage_pools(limit: int = 15):
     return {'pools': {pool: {'items': records[pool], 'total': len(records[pool]), 'has_more': len(records[pool]) >= limit} for pool in pool_names}}
 
 
+@app.get('/api/usage/ranking')
+async def usage_ranking():
+    """Rank every locally managed account by share of the newest 100 calls."""
+    accounts = store.accounts()
+    ranking = {int(account['id']): {
+        'account_id': int(account['id']), 'account_name': account['name'],
+        'pool': account['pool'], 'state': account['state'], 'share': 0,
+        'last_created_at': None,
+    } for account in accounts}
+    if not ranking:
+        return {'items': [], 'sample_size': 0}
+    async with Sub2API(store.settings()) as client:
+        result = await client.usage(page=1, page_size=100)
+    items = result.get('items') or []
+    total = len(items)
+    seen = {}
+    for item in items:
+        account_id = item.get('account_id')
+        if account_id is None or int(account_id) not in ranking:
+            continue
+        key = int(account_id)
+        seen[key] = seen.get(key, 0) + 1
+        if ranking[key]['last_created_at'] is None:
+            ranking[key]['last_created_at'] = item.get('created_at')
+    for account_id, count in seen.items():
+        ranking[account_id]['share'] = round(count / total * 100, 1) if total else 0
+    return {'items': sorted(ranking.values(), key=lambda item: (-item['share'], item['account_name'].casefold(), item['account_id'])), 'sample_size': total}
+
+
 @app.post('/api/accounts/enroll')
 async def enroll(value: Enroll):
     async with scheduler.lock:
@@ -314,6 +343,10 @@ async def enroll(value: Enroll):
                 raise HTTPException(409, f"账号不能同时进入多个号池：{'、'.join(conflicts)}，当前目标为{POOL_NAMES[value.pool]}")
             for remote in remotes:
                 store.enroll(public_account(remote), value.pool)
+                recovery = recovery_from_note(remote.get('notes'))
+                if recovery:
+                    store.save_recovery(remote['id'], recovery)
+                    store.update(remote['id'], relogin_error='', relogin_last_at=None, relogin_count=0, relogin_failures=0)
                 store.event('enroll', f"{remote['name']} 加入本地号池", remote['id'])
     return {'count': len(remotes)}
 

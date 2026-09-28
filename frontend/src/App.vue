@@ -30,7 +30,13 @@ const settings = ref(null)
 const data = ref({ accounts: [], events: [], inspections: [], batches: [], worker: {}, configured: false })
 const usagePoolRecords = ref({ priority: [], risk: [], third_party: [] })
 const usageTotal = ref(0)
+const usageActiveCounts = computed(() => Object.fromEntries(pools.map(pool => [pool.id, data.value.accounts.filter(account => account.pool === pool.id && ['active', 'probation'].includes(account.state) && account.remote?.status === 'active' && account.remote?.schedulable === true).length])))
 const usageLoading = ref(false)
+const rankingOpen = ref(true)
+const ranking = ref([])
+const rankingSampleSize = ref(0)
+const rankingUpdatedAt = ref(0)
+const rankingLoading = ref(false)
 const usageColumnsOpen = ref(false)
 const usageColumnLabels = { model: '模型', reasoning_effort: '推理强度', group: '分组' }
 const metadata = ref({ groups: [], proxies: [] })
@@ -62,7 +68,7 @@ const importOptions = ref(null)
 const importSettingsDialog = ref(null)
 const importSettingsError = ref('')
 const now = ref(Date.now() / 1000)
-let polling, clock, toastTimer
+let polling, rankingPolling, clock, toastTimer
 const statuses = { active: '调度中', cooldown: '冷却中', probation: '恢复观察', manual: '手动暂停', pausing: '暂停待确认', resuming: '恢复待确认' }
 const poolName = id => pools.find(p => p.id === id)?.name || id
 const isGuarded = account => (settings.value?.rule.guarded_pools || ['risk']).includes(account.pool)
@@ -73,6 +79,7 @@ const usageTimeText = value => value ? new Date(value).toLocaleString('zh-CN', {
 const latencyText = value => value === null || value === undefined ? '—' : `${(value / 1000).toFixed(2)}s`
 const shortTime = value => value ? new Date(value * 1000).toLocaleTimeString('zh-CN', { hour12: false }) : '等待首次检查'
 const remaining = value => { const seconds = Math.max(0, Math.ceil(value - now.value)); return `${Math.floor(seconds / 60)}分${String(seconds % 60).padStart(2, '0')}秒` }
+const rankingRefreshText = computed(() => rankingUpdatedAt.value ? (rankingUpdatedAt.value + 30 > now.value ? `${remaining(rankingUpdatedAt.value + 30)}后刷新` : '即将刷新') : '等待首次刷新')
 const sampleStatus = account => {
   if (account.auto_relogin_running) return '凭据失效 · 自动重登中'
   if (account.pool === 'third_party' && account.relogin_failures > 3) return '自动重登 · 已放弃'
@@ -95,7 +102,8 @@ const nextCheckText = account => {
   if (account.remote.image_only) return '无需首字评估'
   if (!settings.value.rule.enabled || !isGuarded(account)) return '未安排巡检'
   if (['manual', 'pausing', 'resuming'].includes(account.state) || (account.remote.schedulable === false && account.state !== 'cooldown')) return '不在调度中'
-  const last = account.last_checked || data.value.worker.last_tick
+  // 下一轮倒计时从整轮巡检结束开始；账号的 last_checked 可能发生在本轮中途。
+  const last = data.value.worker.last_tick
   if (!last) return '等待首次检查'
   if (data.value.worker.running) return '正在巡检'
   const due = last + settings.value.rule.poll_seconds
@@ -179,6 +187,20 @@ async function loadUsage() {
     loadError.value = error.message
   } finally {
     usageLoading.value = false
+  }
+}
+async function loadRanking() {
+  if (!data.value.configured || rankingLoading.value) return
+  rankingLoading.value = true
+  try {
+    const result = await api('/usage/ranking')
+    ranking.value = result.items || []
+    rankingSampleSize.value = result.sample_size || 0
+    rankingUpdatedAt.value = Date.now() / 1000
+  } catch (error) {
+    loadError.value = error.message
+  } finally {
+    rankingLoading.value = false
   }
 }
 function isUsageColumnVisible(column) {
@@ -342,11 +364,12 @@ function downloadExample() {
 }
 onMounted(async () => {
   globalThis.addEventListener('popstate', handlePopState)
-  try { settings.value = await api('/settings'); importOptions.value = clone(settings.value.import_options); await refresh(); if (data.value.configured) { await loadMetadata(); if (page.value === 'usage') await loadUsage() } } catch (error) { notify(error.message, true) }
+  try { settings.value = await api('/settings'); importOptions.value = clone(settings.value.import_options); await refresh(); if (data.value.configured) { await loadMetadata(); await loadRanking(); if (page.value === 'usage') await loadUsage() } } catch (error) { notify(error.message, true) }
   polling = setInterval(() => { void refresh(); if (page.value === 'usage') void loadUsage() }, refreshIntervalSeconds * 1000)
+  rankingPolling = setInterval(() => { void loadRanking() }, 30000)
   clock = setInterval(() => { now.value = Date.now() / 1000 }, 1000)
 })
-onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); clearInterval(polling); clearInterval(clock); clearTimeout(toastTimer) })
+onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); clearInterval(polling); clearInterval(rankingPolling); clearInterval(clock); clearTimeout(toastTimer) })
 </script>
 
 <template>
@@ -381,7 +404,7 @@ onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); 
             <section v-if="page === 'overview'" class="panel recent-events"><div class="panel-heading"><h2>最近动态</h2><button class="text-button" @click="page = 'events'">全部日志<ArrowRight :size="14"/></button></div><div v-if="!data.events.length" class="quiet-empty">暂时没有操作记录。一切从连接你的服务开始。</div><div v-for="event in data.events.slice(0, 4)" :key="event.id" class="event-row"><span :class="['event-dot', event.level]"><Check :size="12"/></span><span>{{ event.message }}</span><small v-if="event.account_id">#{{ event.account_id }}</small><time>{{ timeText(event.created_at) }}</time></div></section>
           </template>
 
-          <template v-if="page === 'settings'"><form class="settings-layout" @submit.prevent="saveSettings"><section class="panel form-panel"><div class="card-title"><div class="tinted-icon"><Unplug :size="21"/></div><div><h2>Sub2API 连接</h2><p>所有远端操作均通过管理员接口执行</p></div><span :class="['badge', settings.key_configured ? 'success' : 'neutral']">{{ settings.key_configured ? 'Key 已设置' : '待配置' }}</span></div><label>Sub2API 地址<input v-model.trim="settings.base_url" type="url" placeholder="https://your-sub2api.example.com" required/><small>填写服务根地址，也支持以 /api/v1 结尾。</small></label><label>管理员 API Key<input v-model="settings.admin_key" type="password" autocomplete="new-password" :placeholder="settings.key_configured ? '已设置，留空保持不变' : '输入 Sub2API 管理员 API Key'"/><small>在 Sub2API 后台生成，用于 /api/v1/admin/*。</small></label><label>鉴权方式<input value="X-API-Key · 管理员 Key" disabled/></label><div class="form-actions"><button class="button primary" :disabled="busy"><Check :size="16"/>保存设置</button><button type="button" class="button" :disabled="busy" @click="testConnection"><RefreshCw :size="16"/>测试连接</button></div></section><aside class="help-panel"><ShieldCheck :size="26"/><h3>你的服务，你的数据</h3><p>管理员 Key 加密保存于本机，页面不会回显。账号分类与调度状态存储在独立的 SQLite 数据库。</p><div class="help-line"><CheckCheck :size="16"/>仅管理 GPT / OpenAI 平台</div><div class="help-line"><CheckCheck :size="16"/>已有账号录入仅保存本地分类</div><div class="help-line"><CheckCheck :size="16"/>不通过页面传输管理员 Key 到第三方</div><hr/><p>本地服务默认仅监听 127.0.0.1。此版本面向单机管理员使用。</p></aside></form><section class="panel form-panel defaults-panel"><div class="card-title"><div><h2>默认上号参数</h2><p>保存后用于下一次打开快速上号页面</p></div></div><form @submit.prevent="saveSettings"><ImportOptions :model="settings.import_options" :groups="metadata.groups" :proxies="metadata.proxies" :busy="busy" @refresh="action(loadMetadata)"/><div class="form-actions"><button class="button primary" :disabled="busy">保存默认参数</button><button type="button" class="button" @click="importOptions = clone(settings.import_options); page = 'import'">使用这些参数上号<ArrowRight :size="15"/></button></div></form></section></template>
+          <template v-if="page === 'settings'"><div class="connection-settings-grid"><form class="settings-layout" @submit.prevent="saveSettings"><section class="panel form-panel"><div class="card-title"><div class="tinted-icon"><Unplug :size="21"/></div><div><h2>Sub2API 连接</h2><p>所有远端操作均通过管理员接口执行</p></div><span :class="['badge', settings.key_configured ? 'success' : 'neutral']">{{ settings.key_configured ? 'Key 已设置' : '待配置' }}</span></div><label>Sub2API 地址<input v-model.trim="settings.base_url" type="url" placeholder="https://your-sub2api.example.com" required/><small>填写服务根地址，也支持以 /api/v1 结尾。</small></label><label>管理员 API Key<input v-model="settings.admin_key" type="password" autocomplete="new-password" :placeholder="settings.key_configured ? '已设置，留空保持不变' : '输入 Sub2API 管理员 API Key'"/><small>在 Sub2API 后台生成，用于 /api/v1/admin/*。</small></label><label>鉴权方式<input value="X-API-Key · 管理员 Key" disabled/></label><div class="form-actions"><button class="button primary" :disabled="busy"><Check :size="16"/>保存设置</button><button type="button" class="button" :disabled="busy" @click="testConnection"><RefreshCw :size="16"/>测试连接</button></div></section><aside class="help-panel"><ShieldCheck :size="26"/><h3>你的服务，你的数据</h3><p>管理员 Key 加密保存于本机，页面不会回显。账号分类与调度状态存储在独立的 SQLite 数据库。</p><div class="help-line"><CheckCheck :size="16"/>仅管理 GPT / OpenAI 平台</div><div class="help-line"><CheckCheck :size="16"/>已有账号录入仅保存本地分类</div><div class="help-line"><CheckCheck :size="16"/>不通过页面传输管理员 Key 到第三方</div><hr/><p>本地服务默认仅监听 127.0.0.1。此版本面向单机管理员使用。</p></aside></form><section class="panel form-panel defaults-panel"><div class="card-title"><div><h2>默认上号参数</h2><p>保存后用于下一次打开快速上号页面</p></div></div><form @submit.prevent="saveSettings"><ImportOptions :model="settings.import_options" :groups="metadata.groups" :proxies="metadata.proxies" :busy="busy" @refresh="action(loadMetadata)"/><div class="form-actions"><button class="button primary" :disabled="busy">保存默认参数</button><button type="button" class="button" @click="importOptions = clone(settings.import_options); page = 'import'">使用这些参数上号<ArrowRight :size="15"/></button></div></form></section></div></template>
 
           <template v-if="page === 'rules'"><form @submit.prevent="saveSettings"><section class="panel form-panel"><div class="card-title"><div class="tinted-icon"><ShieldCheck :size="22"/></div><div><h2>首字延迟守护</h2><p>对选中的本地号池自动采样、暂停、冷却和恢复观察</p></div><label class="check-row"><input v-model="settings.rule.enabled" type="checkbox"/>开启自动调度</label><label class="check-row"><input v-model="settings.rule.alert_only" type="checkbox"/>只告警，不自动冷却</label></div><fieldset class="guard-pools"><legend>需要守护的分组（可多选）</legend><div class="guard-pool-options"><label v-for="pool in pools" :key="pool.id" class="check-row"><input v-model="settings.rule.guarded_pools" type="checkbox" :value="pool.id" :disabled="busy"/>{{ pool.name }}</label></div><small>选中的分组共用下方规则，保存后生效；不选分组时停止新的自动判断。取消守护后，已有冷却仍会按时恢复。</small></fieldset><div class="notice compact"><CircleHelp :size="15"/><span>冷却前先检查高权重组：已有可用账号正在调度则不启用新账号；否则优先启用三方账号，三方无可用账号则启用高权重账号。两组均无可用账号时，当前账号继续调度，不进入冷却。</span></div><div class="flow-diagram"><div><span class="flow-num">01</span><Activity :size="22"/><strong>监测调用</strong><small>5 分钟内最近 {{ settings.rule.sample_size }} 条有效样本</small></div><ArrowRight :size="19"/><div><span class="flow-num">02</span><Pause :size="22"/><strong>{{ settings.rule.alert_only ? '达限后继续调度' : '达限累计后冷却' }}</strong><small>{{ settings.rule.alert_only ? '只记录告警，不停止调度' : `${settings.rule.breach_count} 次后冷却，${settings.rule.cooldown_seconds / 60} 分钟后恢复` }}</small></div><ArrowRight :size="19"/><div><span class="flow-num">03</span><ShieldCheck :size="22"/><strong>恢复观察</strong><small>{{ settings.rule.probation_seconds }} 秒，仅看新调用</small></div><ArrowRight :size="19"/><div><span class="flow-num">04</span><Zap :size="22"/><strong>继续调度</strong><small>{{ settings.rule.alert_only ? '持续记录达限告警' : '达限次数达标才重新冷却' }}</small></div></div><div class="form-grid rules-fields"><label>采样窗口（条）<input v-model.number="settings.rule.sample_size" type="number" min="1" max="100" required/><small>固定统计最近 5 分钟，正常阶段需凑满样本才判断</small></label><label>首字延迟阈值（毫秒）<input v-model.number="settings.rule.threshold_ms" type="number" min="100" max="300000" required/><small>严格大于阈值的调用才记为慢调用</small></label><label>慢调用比例阈值（0–1）<input v-model.number="settings.rule.slow_ratio" type="number" min="0" max="1" step="0.01" required/><small>占比达到或超过阈值计一次达限，0.5 表示 50%</small></label><label>达限滚动窗口（秒）<input v-model.number="settings.rule.breach_window_seconds" type="number" min="10" max="86400" required/><small>默认 120 秒，窗口随当前时间滚动，过期达限自动失效</small></label><label>窗口内停调次数<input v-model.number="settings.rule.breach_count" type="number" min="1" max="100" required/><small>默认 2 次；再次计次需同时满足间隔和新样本要求</small></label><label>计次最小间隔（秒）<input v-model.number="settings.rule.breach_min_interval_seconds" type="number" min="1" max="3600" required/><small>默认 30 秒，从上次实际计次开始计算</small></label><label>再次计次新样本比例（0–1）<input v-model.number="settings.rule.breach_fresh_ratio" type="number" min="0.01" max="1" step="0.01" required/><small>默认 50%，至少 {{ Math.ceil(settings.rule.sample_size * settings.rule.breach_fresh_ratio) }} 条新调用；按配置样本量向上取整</small></label><label>冷却时长（秒）<input v-model.number="settings.rule.cooldown_seconds" type="number" min="10" max="86400" required/><small>默认 1200 秒，每次固定 20 分钟，不随次数递增</small></label><label>恢复观察时长（秒）<input v-model.number="settings.rule.probation_seconds" type="number" min="10" max="3600" required/><small>观察到期后按新样本累计达限；恢复时清空旧次数</small></label><label>检查间隔（秒）<input v-model.number="settings.rule.poll_seconds" type="number" min="5" max="300" required/><small>单轮完成后等待此间隔，再开始下一轮</small></label></div><div class="notice"><CircleHelp :size="18"/><span>只有选中的号池参与首字延迟自动判断；总开关关闭时停止新的自动判断。调用有效统计窗口固定为最近 5 分钟，窗口外的历史调用不参与判断；没有有效调用时清除告警。<template v-if="settings.rule.alert_only">当前为仅告警模式，达限累计仍会记录并发送告警，但不会停止调度。</template><template v-else>达限先告警，滚动窗口内次数达标才冷却。每次冷却固定等待 {{ settings.rule.cooldown_seconds / 60 }} 分钟后恢复，不随冷却次数递增。三方账号保持调度，仅绑定正常的「生图」分组；冷却结束或手动结束冷却后，重新绑定所有正常状态的 GPT 分组。风控组及高权重组冷却仍停止调度。</template>再次计次必须同时满足最小间隔和新样本比例；新样本相对上次实际计次的调用 ID 水位判断，数量按配置样本量向上取整，恢复观察阶段也不降低新样本要求。三方账号另检查认证状态（包含仅生图账号）：守护总开关开启时，已保存账密的账号发生 401 / 认证失效会自动重登；JSON 或历史未保存账密账号需手动处理。每次重登至少间隔 5 分钟；连续失败超过 3 次（第 4 次失败）后放弃自动重登，重启或等待不解除。成功重登后清零失败次数；已放弃账号需人工成功重登后恢复。手动暂停或配置变化导致的取消不计为失败。三方冷却期间不采样，不会因调度开关保持开启而提前结束冷却；生图分组缺失或非正常状态时不执行分组切换。次数过期不会把相同样本重新计次；恢复调度或修改达限规则后重新累计达限次数。自动冷却前只检查上游「Pro号池」是否有其它可用的本地托管账号，不要求覆盖当前账号的其它上游分组。所有守护分组采用相同替补规则：优先复用正在调度的高权重账号，否则选择三方账号，再选择高权重账号，不选择风控账号作为替补。候选须为 active、未限流且不在本地冷却或状态切换中，手动暂停账号可被启用。三方已有可用账号调度时直接复用。两组均不可用或启用失败时不允许冷却。进入冷却后只复核本次保障账号一次，复核失败则恢复当前账号；冷却期间不再检查替补。恢复后同时应用 5 分钟窗口、新的时间边界与记录 ID 水位，排除旧调用和恢复前在途请求。观察通过后也保留边界，防止旧慢调用再次触发。所有号池均可手动暂停 / 恢复。</span></div><div class="form-actions"><button class="button primary" :disabled="busy"><Check :size="16"/>保存调度规则</button></div></section></form>
             <section class="panel cooldown-panel" aria-labelledby="cooldown-title">
@@ -419,7 +442,7 @@ onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); 
             </div>
             <div v-if="!data.configured" class="empty-state"><Unplug :size="28"/><h3>请先连接 Sub2API</h3><p>配置管理员 API Key 后才能读取账号调用记录。</p><button class="button" @click="page = 'settings'">配置连接<ArrowRight :size="15"/></button></div>
             <div v-else class="usage-pool-grid">
-              <section v-for="pool in pools" :key="pool.id" :class="['usage-pool-card', pool.color]"><div class="usage-pool-heading"><div><h3>{{ pool.name }}</h3><small>{{ pool.desc }}</small></div><span class="count-chip">{{ usagePoolRecords[pool.id]?.length || 0 }}</span></div><div class="usage-records-scroll"><table class="usage-table" :class="{ 'usage-table-expanded': settings.usage_visible_columns.length > 0 }"><thead><tr><th>账号</th><th v-if="isUsageColumnVisible('model')">模型</th><th v-if="isUsageColumnVisible('reasoning_effort')">推理强度</th><th v-if="isUsageColumnVisible('group')">分组</th><th>延迟</th><th>时间</th></tr></thead><tbody><tr v-for="record in usagePoolRecords[pool.id]" :key="record.id"><td><strong>{{ record.account_name || `#${record.account_id}` }}</strong><small>#{{ record.account_id }}</small></td><td v-if="isUsageColumnVisible('model')">{{ record.model || '—' }}</td><td v-if="isUsageColumnVisible('reasoning_effort')"><span class="reasoning-tag">{{ record.reasoning_effort || '—' }}</span></td><td v-if="isUsageColumnVisible('group')"><span class="pool-tag">{{ record.group_name || '未分组' }}</span></td><td><div class="latency-cell"><span :class="{ 'slow-latency': record.first_token_ms > settings.rule.threshold_ms }">首字 {{ latencyText(record.first_token_ms) }}</span><small>总耗时 {{ latencyText(record.duration_ms) }}</small></div></td><td class="muted small">{{ usageTimeText(record.created_at) }}</td></tr></tbody></table><div v-if="!usagePoolRecords[pool.id]?.length" class="usage-pool-empty">暂无调用记录</div></div></section>
+              <section v-for="pool in pools" :key="pool.id" :class="['usage-pool-card', pool.color]"><div class="usage-pool-heading"><div><h3>{{ pool.name }}</h3><small>{{ pool.desc }}</small><span class="usage-active-count"><span class="dot green"></span>正在调度中 {{ usageActiveCounts[pool.id] || 0 }} 个</span></div><span class="count-chip">{{ usagePoolRecords[pool.id]?.length || 0 }} 条记录</span></div><div class="usage-records-scroll"><table class="usage-table" :class="{ 'usage-table-expanded': settings.usage_visible_columns.length > 0 }"><thead><tr><th>账号</th><th v-if="isUsageColumnVisible('model')">模型</th><th v-if="isUsageColumnVisible('reasoning_effort')">推理强度</th><th v-if="isUsageColumnVisible('group')">分组</th><th>延迟</th><th>时间</th></tr></thead><tbody><tr v-for="record in usagePoolRecords[pool.id]" :key="record.id"><td><strong>{{ record.account_name || `#${record.account_id}` }}</strong><small>#{{ record.account_id }}</small></td><td v-if="isUsageColumnVisible('model')">{{ record.model || '—' }}</td><td v-if="isUsageColumnVisible('reasoning_effort')"><span class="reasoning-tag">{{ record.reasoning_effort || '—' }}</span></td><td v-if="isUsageColumnVisible('group')"><span class="pool-tag">{{ record.group_name || '未分组' }}</span></td><td><div class="latency-cell"><span :class="{ 'slow-latency': record.first_token_ms > settings.rule.threshold_ms }">首字 {{ latencyText(record.first_token_ms) }}</span><small>总耗时 {{ latencyText(record.duration_ms) }}</small></div></td><td class="muted small">{{ usageTimeText(record.created_at) }}</td></tr></tbody></table><div v-if="!usagePoolRecords[pool.id]?.length" class="usage-pool-empty">暂无调用记录</div></div></section>
             </div>
           </section>
         </template>
@@ -427,6 +450,10 @@ onUnmounted(() => { globalThis.removeEventListener('popstate', handlePopState); 
         <footer class="page-footer"><span><Database :size="13"/>数据保存在本机 · SQLite</span><span>自动调度，让账号各得其时。</span></footer>
       </div>
     </main>
+    <aside v-if="settings" class="ranking-sidebar" aria-label="调用占比排名">
+      <button v-if="!rankingOpen" class="button ranking-toggle" type="button" aria-controls="usage-ranking-sidebar" aria-expanded="false" @click="rankingOpen = true"><ListFilter :size="16"/>调用占比排名</button>
+      <section v-if="rankingOpen" id="usage-ranking-sidebar" class="panel ranking-panel"><div class="panel-heading"><div><h2>调用占比排名</h2><p>最新 {{ rankingSampleSize }} 条调用 · {{ rankingRefreshText }}</p></div><button class="icon-button" type="button" aria-label="收起调用占比排名" @click="rankingOpen = false"><X :size="16"/></button></div><div class="ranking-list"><div v-for="(item, index) in ranking" :key="item.account_id" class="ranking-row"><span class="ranking-index">{{ index + 1 }}</span><div class="ranking-account"><strong>{{ item.account_name }}</strong><small>#{{ item.account_id }} · {{ poolName(item.pool) }} · {{ statuses[item.state] || item.state }}</small></div><strong class="ranking-share">{{ item.share.toFixed(1) }}%</strong></div><p v-if="!ranking.length" class="quiet-empty">暂无本地托管账号</p></div></section>
+    </aside>
 
     <ReloginAccount v-if="page === 'import' && relogin" :batch="relogin.batch" :item="relogin.item" :source="relogin.source" @close="relogin = null" @loading="loginLoading = $event" @updated="reloginUpdated"/>
 
