@@ -14,6 +14,7 @@ const checking = ref('')
 const error = ref('')
 const expanded = ref(new Set())
 const onlyIssues = ref(false)
+const now = ref(Date.now() / 1000)
 const pageSize = 10
 const pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const pools = { priority: '高权重组', risk: '风控组', third_party: '三方账号组' }
@@ -25,7 +26,7 @@ const issueCount = batch => batch.items.filter(isIssue).length
 const checkedAt = batch => Math.max(0, ...batch.items.map(item => item.health?.checked_at || 0))
 const matchingItems = batch => batch.items.filter(item => (!onlyIssues.value || isIssue(item)) && `${item.name} ${item.email || ''} ${item.account_id || ''}`.toLowerCase().includes(search.value.trim().toLowerCase()))
 const isOpen = batch => expanded.value.has(batch.id) || !!search.value.trim() || onlyIssues.value
-let timer, requestId = 0, mounted = true, firstLoad = true
+let timer, clock, requestId = 0, mounted = true, firstLoad = true
 
 async function load() {
   const id = ++requestId
@@ -72,15 +73,15 @@ watch(search, () => {
 watch(page, load)
 watch(() => props.revision, load)
 watch(() => JSON.stringify(props.batches), () => { if (!checking.value) void load() })
-onMounted(load)
-onUnmounted(() => { mounted = false; requestId++; clearTimeout(timer) })
+onMounted(() => { void load(); clock = setInterval(() => { now.value = Date.now() / 1000 }, 1000) })
+onUnmounted(() => { mounted = false; requestId++; clearTimeout(timer); clearInterval(clock) })
 </script>
 
 <template>
   <section class="panel import-history" aria-labelledby="import-history-title">
     <div class="panel-heading"><div><h2 id="import-history-title">最近导入批次 <span class="count-chip">{{ total }}</span></h2><p>搜索全部历史账号，检查失效状态，快速重登入池</p></div><button class="button" :disabled="loading || !!checking" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新列表</button></div>
     <div class="history-toolbar"><label class="search-input"><Search :size="16"/><input v-model="search" maxlength="200" placeholder="搜索账号名称、邮箱或 ID" aria-label="搜索导入批次账号"/><button v-if="search" class="icon-button" aria-label="清空账号搜索" @click="search = ''"><X :size="14"/></button></label><label class="history-filter"><input v-model="onlyIssues" type="checkbox"/>仅展示需处理账号</label></div>
-    <p class="history-help">批次检查实时读取 Sub2API 状态，不发起模型调用。导入成功不代表当前登录有效；检查结果以标注时间为准。</p>
+    <p class="history-help">推送成功后自动观察 5 分钟，期间上游账号错误会使用已保存账密自动重登。暂停、停用、到期和限流不触发重登；无账密需手动处理。检查不发起模型调用。</p>
     <p v-if="error" class="notice error history-error" role="alert">{{ error }}</p>
     <div v-if="!items.length" class="quiet-empty" role="status">{{ loading ? '正在读取批次…' : search ? '没有匹配的账号或批次' : '还没有导入批次' }}</div>
     <article v-for="batch in items" :key="batch.id" class="history-batch">
@@ -93,7 +94,7 @@ onUnmounted(() => { mounted = false; requestId++; clearTimeout(timer) })
         <div v-if="!matchingItems(batch).length" class="quiet-empty">当前筛选下没有需展示的账号；可点击「检查整批」更新状态。</div>
         <div v-else class="table-scroll history-table"><table><thead><tr><th>账号 / 导入结果</th><th>最近检查</th><th>号池 / 调度</th><th class="align-right">操作</th></tr></thead><tbody>
           <tr v-for="item in matchingItems(batch)" :key="item.index">
-            <td><strong>{{ item.name }}</strong><small v-if="item.email && !item.name.includes(item.email)">{{ item.email }}</small><small>{{ item.account_id ? '#' + item.account_id + ' · ' : '' }}{{ importLabels[item.status] || item.status }}</small><small v-if="item.status !== 'done' && item.message">{{ item.message }}</small></td>
+            <td><strong>{{ item.name }}</strong><small v-if="item.email && !item.name.includes(item.email)">{{ item.email }}</small><small>{{ item.account_id ? '#' + item.account_id + ' · ' : '' }}{{ importLabels[item.status] || item.status }}</small><small v-if="item.status !== 'done' && item.message">{{ item.message }}</small><small v-if="item.observation?.until" class="purple-text">{{ item.observation.until > now ? `入池观察 · 剩余 ${Math.ceil(item.observation.until - now)} 秒` : '本次 5 分钟入池观察已结束' }}</small><small v-if="item.observation?.error" class="orange-text">{{ item.observation.error }}</small></td>
             <td><span :class="['badge', !item.health ? 'neutral' : item.health.status === 'healthy' ? 'success' : 'warning']">{{ healthLabels[item.health?.status] || '未检查' }}</span><small>{{ item.health?.message || '点击检查整批，获取最新上游状态' }}</small><small v-if="item.health">{{ timeText(item.health.checked_at) }}</small></td>
             <td><template v-if="item.health"><strong>{{ pools[item.health.local_pool] || '未入本地池' }}</strong><small>{{ item.health.schedulable === true ? '上游调度已开启' : item.health.schedulable === false ? '上游调度已停止' : '上游状态未知' }}</small><small v-if="item.health.local_state === 'cooldown'">本地冷却中</small></template><span v-else class="muted">待检查</span></td>
             <td class="align-right"><button class="button" :disabled="busy || !!checking || !configured" @click="emit('relogin', batch, item)"><RefreshCw :size="14"/>重新登录并推送</button></td>

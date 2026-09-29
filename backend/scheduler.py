@@ -5,7 +5,7 @@ import time
 import contextlib
 
 from .sub2api import Sub2API, UpstreamError, image_only_account, public_account
-from .batch_health import authentication_failed
+from .batch_health import authentication_failed, post_import_observing, observation_error, inspect_item
 from .analytics import Analytics
 from .importer import ReloginCancelled
 from . import updater
@@ -23,6 +23,7 @@ class Scheduler:
         self.store = store
         self.mailer = mailer
         self.lock = asyncio.Lock()
+        self.wakeup = asyncio.Event()
         self.last_tick = None
         self.last_error = None
         self.running = False
@@ -69,6 +70,7 @@ class Scheduler:
 
     async def run(self):
         while True:
+            self.wakeup.clear()
             try:
                 await self.tick()
             except asyncio.CancelledError:
@@ -76,7 +78,13 @@ class Scheduler:
             except Exception:
                 self.last_error = '调度周期执行异常，请检查本地日志'
                 self.store.event('worker_error', self.last_error, level='error')
-            await asyncio.sleep(self.store.settings().rule.poll_seconds)
+            interval = self.store.settings().rule.poll_seconds
+            if any(post_import_observing(account) for account in self.store.accounts()):
+                interval = min(interval, 20)
+            try:
+                await asyncio.wait_for(self.wakeup.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
 
     async def tick(self):
         async with self.lock:
@@ -104,6 +112,9 @@ class Scheduler:
         # 远端状态刷新不等于首字延迟巡检。只有下面真正进入样本采集时，
         # 才更新 last_checked，避免关闭守护或手动停调的账号显示“仍在巡检”。
         self.store.update(account_id, remote=public_account(remote), name=remote['name'], error=None)
+        if post_import_observing(account):
+            health = inspect_item({'account_id': account_id}, remote, self.store.account(account_id), client.now())
+            self.store.update(account_id, post_import_health=health)
         image_only = image_only_account(remote)
         if image_only:
             # 同步生图没有首字指标，清除旧告警，但保留冷却和恢复任务。
@@ -116,23 +127,26 @@ class Scheduler:
         expired = False
         if remote.get('expires_at') and remote.get('auto_pause_on_expired', True):
             expired = expiry_timestamp(remote['expires_at']) <= client.now()
-        if authentication_failed(remote) and account.get('pool') == 'third_party' and not expired:
+        observing = post_import_observing(account)
+        observed_error = observing and account['state'] in {'active', 'probation'} and observation_error(remote, client.now())
+        if (observed_error or (not observing and authentication_failed(remote) and account.get('pool') == 'third_party')) and not expired:
+            label = '入池观察异常' if observing else '凭据失效'
             recovery = self.store.recovery(account_id)
             if not recovery:
-                self.recovery_notice(account, '凭据失效 · 未保存账密，请手动重登', '跳过自动重登')
+                self.recovery_notice(account, f'{label} · 未保存账密，请手动重登', '跳过自动重登')
             elif self.relogin_account_id == account_id:
-                self.store.update(account_id, error='凭据失效 · 自动重登中')
+                self.store.update(account_id, error=f'{label} · 自动重登中')
             elif account.get('relogin_failures', 0) > 3:
                 self.store.update(account_id, error=account.get('relogin_error') or '重登失败超过 3 次，已放弃自动重登')
-            elif not rule.enabled or account['state'] in {'manual', 'pausing', 'resuming'} or (remote.get('schedulable') is False and account['state'] != 'cooldown'):
+            elif not rule.enabled or account['state'] in {'manual', 'pausing', 'resuming'} or (remote.get('schedulable') is False and account['state'] != 'cooldown' and not observed_error):
                 self.recovery_notice(account, '凭据失效 · 守护关闭或已暂停，暂不重登', '跳过自动重登')
-            elif time.time() - (account.get('relogin_last_at') or 0) < 300:
+            elif time.time() - (account.get('relogin_last_at') or 0) < (60 if observing else 300):
                 self.store.update(account_id, error=account.get('relogin_error') or '凭据失效 · 等待重试')
             elif (self.relogin_task and not self.relogin_task.done()) or self.relogin_busy() or updater.locked(self.store.directory) or (self.store.directory / 'upgrade-deploying').exists():
                 self.store.update(account_id, error='凭据失效 · 等待登录通道')
             elif self.relogin_handler:
                 self.store.update(account_id, relogin_last_at=time.time(), relogin_error='', relogin_count=account.get('relogin_count', 0) + 1)
-                self.recovery_notice(account, '凭据失效 · 自动重登中', '自动重登')
+                self.recovery_notice(account, f'{label} · 自动重登中', '自动重登')
                 self.relogin_account_id = account_id
                 self.relogin_task = asyncio.create_task(self.recover_account(self.store.account(account_id), recovery))
             else:
@@ -205,6 +219,9 @@ class Scheduler:
             return
         if image_only:
             return
+        if observing and state == 'active':
+            # 非守护号池也有推送后的健康观察，不把观察期转成新的自动冷却。
+            return
         if account.get('pool') not in rule.guarded_pools:
             return
         if not remote.get('schedulable'):
@@ -231,7 +248,7 @@ class Scheduler:
             self.record_inspection(account, state, samples, slow, '继续观察' if state == 'probation' else '保持调度', message, rule=rule)
             return
         if state == 'probation':
-            if time.time() < account['probation_until']:
+            if time.time() < max(account['probation_until'] or 0, account.get('post_import_until') or 0):
                 if sample_changed:
                     self.record_inspection(account, state, samples, slow, '继续观察', '恢复观察期内，暂不执行自动暂停', rule=rule)
                 return
@@ -408,6 +425,8 @@ class Scheduler:
                                '提前恢复调度', reason, rule=rule, notify=False)
 
     async def pause(self, client, account, rule, reason, manual=False):
+        if manual:
+            self.store.update(account['id'], post_import_until=None)
         # 先落库意图，再调用幂等开关。进程中断时下一轮可完成未提交状态。
         self.store.update(account['id'], state='pausing', reason=reason, cooldown_replacement_id=None,
                           resume_at=None if manual else time.time() + rule.cooldown_seconds)
@@ -539,7 +558,7 @@ class Scheduler:
         epoch = client.now() + 1
         monitored = account.get('pool') in rule.guarded_pools and not image_only_account(account['remote'])
         self.store.update(account['id'], state='probation' if monitored else 'active', epoch=epoch, watermark=watermark,
-                          probation_until=time.time() + rule.probation_seconds if monitored else None, resume_at=None,
+                          probation_until=max(time.time() + rule.probation_seconds, account.get('post_import_until') or 0) if monitored else None, resume_at=None,
                           sample=[], slow_count=0, breach_times=[], breach_sample='', last_breach_at=None, last_checked=None,
                           error=None, reason=reason, cooldown_mode='', restore_all_groups=False, cooldown_replacement_id=None,
                           remote={**account['remote'], 'schedulable': True})

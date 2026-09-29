@@ -84,7 +84,7 @@ class Store:
                         # 旧版本未保存真正计次的样本基线，新规则不能沿用旧累计次数。
                         self.db.execute("UPDATE accounts SET breach_times='[]', breach_sample=''")
         existing = {row['name'] for row in self.db.execute('PRAGMA table_info(accounts)')}
-        for name, definition in {'cooldown_count': 'INTEGER NOT NULL DEFAULT 0', 'cooldown_replacement_id': 'INTEGER', 'relogin_failures': 'INTEGER NOT NULL DEFAULT 0'}.items():
+        for name, definition in {'cooldown_count': 'INTEGER NOT NULL DEFAULT 0', 'cooldown_replacement_id': 'INTEGER', 'relogin_failures': 'INTEGER NOT NULL DEFAULT 0', 'post_import_until': 'REAL', 'post_import_batch_id': "TEXT NOT NULL DEFAULT ''", 'post_import_health': "TEXT NOT NULL DEFAULT '{}'"}.items():
             if name not in existing:
                 self.db.execute(f'ALTER TABLE accounts ADD COLUMN {name} {definition}')
                 if name == 'cooldown_count':
@@ -185,7 +185,7 @@ class Store:
 
     def decode(self, row):
         result = dict(row)
-        for key in ('remote', 'sample', 'breach_times'):
+        for key in ('remote', 'sample', 'breach_times', 'post_import_health'):
             result[key] = json.loads(result[key])
         result['remote'] = public_account(result['remote'])
         return result
@@ -200,12 +200,13 @@ class Store:
     def update(self, account_id, **values):
         allowed = {'name', 'pool', 'state', 'remote', 'resume_at', 'epoch', 'watermark', 'probation_until', 'sample', 'slow_count', 'last_checked', 'error', 'reason', 'breach_times', 'breach_sample', 'last_breach_at', 'cooldown_mode', 'restore_all_groups', 'relogin_last_at', 'relogin_error', 'relogin_count'}
         allowed.update({'cooldown_count', 'cooldown_replacement_id', 'relogin_failures'})
+        allowed.update({'post_import_until', 'post_import_batch_id', 'post_import_health'})
         if not values.keys() <= allowed:
             raise ValueError('Invalid account fields')
         values['updated_at'] = time.time()
         if 'remote' in values:
             values['remote'] = public_account(values['remote'])
-        for key in ('remote', 'sample', 'breach_times'):
+        for key in ('remote', 'sample', 'breach_times', 'post_import_health'):
             if key in values:
                 values[key] = json.dumps(values[key])
         self.db.execute(f"UPDATE accounts SET {', '.join(key + '=?' for key in values)} WHERE id=?", (*values.values(), account_id))

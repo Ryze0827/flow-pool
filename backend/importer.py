@@ -110,10 +110,23 @@ def normalize(payload, options, start_index=1):
     return result
 
 
-def public_batch(batch):
-    return {'id': batch['id'], 'created_at': batch['created_at'], 'pool': batch['options']['pool'],
+def public_batch(batch, store=None, accounts=None):
+    result = {'id': batch['id'], 'created_at': batch['created_at'], 'pool': batch['options']['pool'],
             'options': batch['options'],
             'items': [{key: item.get(key) for key in ('index', 'name', 'email', 'status', 'account_id', 'message', 'health', 'source')} for item in batch['items']]}
+    if store:
+        for item in result['items']:
+            account_id = item.get('account_id')
+            account = accounts.get(account_id) if accounts is not None else store.account(account_id) if account_id else None
+            if account and account.get('post_import_batch_id') == batch['id']:
+                health = account.get('post_import_health') or {}
+                if health.get('checked_at', 0) >= (item.get('health') or {}).get('checked_at', 0) and health:
+                    item['health'] = health
+                item['observation'] = {'until': account.get('post_import_until'),
+                                       'error': account.get('error'),
+                                       'relogin_count': account.get('relogin_count', 0),
+                                       'relogin_failures': account.get('relogin_failures', 0)}
+    return result
 
 
 class Importer:
@@ -213,8 +226,10 @@ class Importer:
         return remote
 
     async def commit(self, client, batch, item_index=None):
+        from .batch_health import POST_IMPORT_SECONDS
         existing = await client.accounts()
         options = ImportOptions(**batch['options'])
+        completed_ids = []
         for item in batch['items']:
             if item_index is not None and item['index'] != item_index:
                 continue
@@ -281,6 +296,8 @@ class Importer:
                 rule = self.store.settings().rule
                 reason = '推送入池，开始恢复观察' if options.pool in rule.guarded_pools else '推送入池，开启调度'
                 await self.scheduler.resume(client, self.store.account(remote['id']), rule, reason)
+                self.store.update(remote['id'], post_import_batch_id=batch['id'], post_import_until=time.time() + POST_IMPORT_SECONDS, post_import_health={})
+                completed_ids.append(remote['id'])
                 item.update(status='done', message='已推送入池并开启调度')
                 # 成功后清除暂存凭据，批次仍保留可审计的结果。
                 item.pop('payload', None)
@@ -290,18 +307,30 @@ class Importer:
                 old_status = item['status']
                 item.update(status='uncertain' if error.uncertain and old_status == 'creating' else 'updating' if old_status == 'updating' else 'failed', message=error.message)
             self.store.save_batch(batch)
-        return public_batch(batch)
+        # 整批可能耗时较长：本次成功账号统一从本次推送结束开始观察。
+        until = time.time() + POST_IMPORT_SECONDS
+        for account_id in completed_ids:
+            current = self.store.account(account_id)
+            values = {'post_import_until': until}
+            if current['state'] == 'probation':
+                values['probation_until'] = max(until, current.get('probation_until') or 0)
+            self.store.update(account_id, **values)
+            self.store.event('import_observation', '推送成功，开始 5 分钟入池观察，异常时自动重登', account_id)
+        if completed_ids:
+            self.scheduler.wakeup.set()
+        return public_batch(batch, self.store)
 
     async def auto_relogin(self, account, recovery, account_login):
         from .models import LoginImport
-        from .batch_health import authentication_failed
+        from .batch_health import authentication_failed, post_import_observing, observation_error, inspect_item
         from .scheduler import expiry_timestamp
         from .sub2api import Sub2API
         from . import updater
 
         connection = self.store.settings()
         account_id = account['id']
-        options = ImportOptions(**recovery['options'])
+        options = ImportOptions(**recovery.get('options', {}))
+        observing = post_import_observing(account)
 
         def current_account():
             settings = self.store.settings()
@@ -310,8 +339,10 @@ class Importer:
                 raise ReloginCancelled('登录期间连接配置变化，取消自动推送')
             if not settings.rule.enabled or updater.locked(self.store.directory) or (self.store.directory / 'upgrade-deploying').exists():
                 raise ReloginCancelled('自动守护已关闭或正在升级，取消自动推送')
-            if not current or current['pool'] != 'third_party' or self.store.recovery(account_id) != recovery:
-                raise ReloginCancelled('账号已移出三方号池或账密已更新，取消自动推送')
+            if not current or current['pool'] != account['pool'] or (not observing and current['pool'] != 'third_party') or self.store.recovery(account_id) != recovery:
+                raise ReloginCancelled('账号已移出号池或账密已更新，取消自动推送')
+            if observing and (current.get('post_import_until') != account.get('post_import_until') or current.get('post_import_batch_id') != account.get('post_import_batch_id')):
+                raise ReloginCancelled('入池观察已取消或账号已重新推送，取消自动推送')
             if current['state'] in {'manual', 'pausing', 'resuming'} or any(current[key] != account[key] for key in ('resume_at', 'epoch', 'watermark', 'cooldown_mode')):
                 raise ReloginCancelled('账号调度状态发生变化，取消自动推送')
             return current
@@ -319,11 +350,11 @@ class Importer:
         def validate_remote(remote):
             if remote.get('platform') != 'openai' or remote.get('type') != 'oauth':
                 raise UpstreamError('自动重登仅支持 GPT OAuth 账号')
-            if not authentication_failed(remote):
+            if not (observation_error(remote, time.time()) if observing else authentication_failed(remote)):
                 raise ReloginCancelled('上游已不处于认证失效状态，取消自动推送')
             if remote.get('auto_pause_on_expired', True) and remote.get('expires_at') and expiry_timestamp(remote['expires_at']) <= time.time():
                 raise ReloginCancelled('账号已到期，取消自动推送')
-            if remote.get('schedulable') is False and account['state'] != 'cooldown':
+            if remote.get('schedulable') is False and account['state'] != 'cooldown' and not observing:
                 raise ReloginCancelled('账号已停止调度，取消自动推送')
             email = (remote.get('credentials') or {}).get('email', '')
             if not email or email.casefold() != recovery['email'].casefold():
@@ -382,6 +413,9 @@ class Importer:
                         raise UpstreamError('新凭据已写入，但调度尚未恢复')
                     self.store.update(account_id, remote=public_account(refreshed))
                     self.scheduler.complete_resume(client, self.store.account(account_id), self.store.settings().rule, watermark, '凭据失效后自动重登，已重新入池')
+                if observing:
+                    health = inspect_item({'account_id': account_id}, refreshed, self.store.account(account_id), client.now())
+                    self.store.update(account_id, post_import_health=health)
                 self.store.update(account_id, relogin_error='', relogin_last_at=time.time(), relogin_failures=0)
-                self.store.event('auto_relogin', '三方账号已自动重新登录并恢复调度，保留当前分组', account_id)
+                self.store.event('auto_relogin', '账号已自动重新登录并恢复调度，保留当前分组', account_id)
                 self.store.inspection(account_id, self.store.account(account_id)['state'], 0, 0, 0, '自动重登成功', '新凭据已写入原账号，保留当前分组及冷却任务')

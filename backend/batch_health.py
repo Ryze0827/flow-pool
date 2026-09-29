@@ -3,6 +3,20 @@ import time
 
 from .sub2api import unavailable_reason
 
+POST_IMPORT_SECONDS = 300
+
+
+def post_import_observing(account, now=None):
+    return bool(account and account.get('post_import_batch_id') and
+                (account.get('post_import_until') or 0) > (time.time() if now is None else now))
+
+
+def observation_error(remote, now):
+    # error 会自动关闭上游调度开关；仅在此次观察中允许修复这种关闭。
+    # 停用、到期、限流、过载及临时禁调不通过重登强行启用。
+    return (remote.get('status') == 'error' and remote.get('type') == 'oauth' and
+            not unavailable_reason({**remote, 'status': 'active', 'schedulable': True}, now))
+
 
 def authentication_failed(remote):
     error = str(remote.get('error_message') or '').casefold()

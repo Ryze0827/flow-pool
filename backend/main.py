@@ -404,11 +404,12 @@ async def remote_accounts(search: str = '', group: str = '', account_type: str =
 @app.get('/api/dashboard')
 async def dashboard():
     accounts = store.accounts()
+    account_map = {account['id']: account for account in accounts}
     recovery_ids = store.recovery_ids()
     for account in accounts:
         account['auto_relogin_available'] = account['id'] in recovery_ids
         account['auto_relogin_running'] = scheduler.relogin_account_id == account['id']
-    return {'accounts': accounts, 'events': store.events(), 'inspections': store.inspections(), 'batches': [public_batch(b) for b in store.batches()],
+    return {'accounts': accounts, 'events': store.events(), 'inspections': store.inspections(), 'batches': [public_batch(b, store, account_map) for b in store.batches()],
             'worker': {'last_tick': scheduler.last_tick, 'error': scheduler.last_error, 'running': scheduler.running},
             'configured': bool(store.settings().admin_key and store.settings().base_url), 'now': time.time()}
 
@@ -536,7 +537,8 @@ async def import_preview(value: Preview):
 @app.get('/api/import/batches')
 async def import_batches(search: str = Query('', max_length=200), page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=50)):
     batches, total = store.batch_page(search, page, page_size)
-    return {'items': [public_batch(batch) for batch in batches], 'total': total, 'page': page, 'page_size': page_size}
+    accounts = {account['id']: account for account in store.accounts()}
+    return {'items': [public_batch(batch, store, accounts) for batch in batches], 'total': total, 'page': page, 'page_size': page_size}
 
 
 @app.post('/api/import/{batch_id}/check')
@@ -563,7 +565,7 @@ async def import_check(batch_id: str):
             account_id = item.get('account_id')
             item['health'] = inspect_item(item, remotes.get(account_id), store.account(account_id), remote_now)
         store.save_batch(batch)
-        return public_batch(batch)
+        return public_batch(batch, store)
 
 
 def relogin_item(batch_id, item_index):
@@ -664,6 +666,7 @@ async def import_commit(batch_id: str):
 @app.delete('/api/import/{batch_id}')
 async def import_discard(batch_id: str):
     async with scheduler.lock:
+        store.db.execute('UPDATE accounts SET post_import_until=NULL WHERE post_import_batch_id=?', (batch_id,))
         store.db.execute('DELETE FROM batches WHERE id=?', (batch_id,))
         store.db.commit()
     return {'ok': True}
