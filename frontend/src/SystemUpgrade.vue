@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { ArrowUpToLine, CheckCheck, LoaderCircle, RefreshCw, X } from 'lucide-vue-next'
 import { api } from './api'
 
@@ -14,7 +14,7 @@ const timeText = value => value ? new Date(value * 1000).toLocaleString('zh-CN',
 const active = computed(() => submitting.value || state.value.running)
 const labels = { success: '升级完成', unchanged: '已是最新', failed: '升级失败', rolled_back: '已回退', recovery_failed: '需要处理', interrupted: '任务中断', running: '升级中' }
 const jobLabel = computed(() => labels[state.value.job?.status] || '等待升级')
-let timer, mounted = true, fetching = false
+let mounted = true, fetching = false
 
 async function refresh() {
   if (fetching) return
@@ -48,14 +48,10 @@ async function start() {
     const job = await api('/upgrade', 'POST')
     state.value = { ...state.value, running: true, job }
   } catch (failure) { error.value = failure.message }
-  finally { submitting.value = false; await refresh() }
+  finally { submitting.value = false }
 }
 function reload() { globalThis.location.reload() }
-onMounted(() => {
-  void refresh()
-  timer = setInterval(() => { if (state.value.running || dialog.value?.open) void refresh() }, 2000)
-})
-onUnmounted(() => { mounted = false; clearInterval(timer) })
+onUnmounted(() => { mounted = false })
 </script>
 
 <template>
@@ -68,14 +64,14 @@ onUnmounted(() => { mounted = false; clearInterval(timer) })
       <p v-if="!state.repo.ready && !active" class="notice compact">{{ state.repo.reason || '正在检查部署环境…' }}</p>
       <div v-if="state.job" class="upgrade-progress" role="status" aria-live="polite">
         <div class="section-heading"><strong>{{ jobLabel }}</strong><span :class="['badge', ['success', 'unchanged'].includes(state.job.status) ? 'success' : active ? 'neutral' : 'warning']">{{ active ? '后台执行' : '已结束' }}</span></div>
-        <p>{{ reconnecting ? '服务正在重启，等待重新连接…' : state.job.message }}</p>
+        <p>{{ reconnecting ? '暂时无法连接服务，可能正在重启，请稍后手动刷新状态。' : state.job.message }}</p>
         <small v-if="state.job.new_commit">版本 {{ state.job.old_commit.slice(0, 8) }} → {{ state.job.new_commit.slice(0, 8) }}</small>
         <ol v-if="state.job.steps?.length" class="upgrade-steps"><li v-for="(step, index) in state.job.steps" :key="index"><span>{{ step.message }}</span><time>{{ timeText(step.time) }}</time></li></ol>
-        <small class="muted">最近更新：{{ timeText(state.job.updated_at) }} · 自动刷新 2 秒</small>
+        <small class="muted">最近更新：{{ timeText(state.job.updated_at) }} · 手动刷新状态</small>
       </div>
       <p v-if="error" class="notice error" role="alert">{{ error }}</p>
       <p v-if="active" class="small muted">关闭弹框不会中断升级；升级完成前暂停页面写入操作。</p>
     </div>
-    <div class="modal-footer"><button class="button" :disabled="loading" @click="refresh"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新状态 · 每 2 秒</button><button v-if="state.job?.status === 'success' && !active" class="button" @click="reload"><CheckCheck :size="16"/>刷新页面</button><button class="button primary" :disabled="active || busy || !state.repo.ready || loading" @click="start"><LoaderCircle v-if="active" :size="16" class="spinning"/><ArrowUpToLine v-else :size="16"/>{{ active ? '正在升级…' : '开始升级' }}</button></div>
+    <div class="modal-footer"><button class="button" :disabled="loading" @click="refresh"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新状态</button><button v-if="state.job?.status === 'success' && !active" class="button" @click="reload"><CheckCheck :size="16"/>刷新页面</button><button class="button primary" :disabled="active || busy || !state.repo.ready || loading" @click="start"><LoaderCircle v-if="active" :size="16" class="spinning"/><ArrowUpToLine v-else :size="16"/>{{ active ? '正在升级…' : '开始升级' }}</button></div>
   </dialog>
 </template>
