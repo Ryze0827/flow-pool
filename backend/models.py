@@ -5,6 +5,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
+from .model_catalog import OPENAI_MODELS
+
 Pool = Literal['priority', 'risk', 'third_party']
 UsageColumn = Literal['model', 'reasoning_effort', 'group']
 
@@ -107,7 +109,17 @@ class ImportOptions(BaseModel):
     auto_pause_on_expired: bool = True
     confirm_mixed_channel_risk: bool = False
     duplicate: Literal['skip', 'update'] = 'skip'
+    model_whitelist: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(default_factory=lambda: list(OPENAI_MODELS), max_length=200)
     model_mappings: list[ModelMapping] = Field(default_factory=list, max_length=200)
+
+    @field_validator('model_whitelist')
+    @classmethod
+    def whitelist_valid(cls, values):
+        # Sub2API 白名单使用同名映射，不允许将通配符作为上游模型名。
+        models = [ModelMapping(source=value, target=value).target for value in values]
+        if len(set(models)) != len(models):
+            raise ValueError('白名单模型不能重复配置')
+        return models
 
     @field_validator('model_mappings')
     @classmethod

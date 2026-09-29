@@ -29,6 +29,7 @@ from .rate_inspection import RateInspection, select_groups
 from .postgres import Sub2Postgres, resolve_postgres_settings
 from .analytics import Analytics
 from .performance import PerformanceMonitor
+from .model_catalog import OPENAI_MODELS
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('SCHEDULER_DATA_DIR', ROOT / 'data'))
@@ -496,6 +497,11 @@ async def account_action(account_id: int, action: str):
 async def tick():
     await scheduler.tick()
     return {'ok': True}
+
+
+@app.get('/api/import/model-whitelist')
+async def import_model_whitelist():
+    return {'models': list(OPENAI_MODELS)}
 
 
 @app.post('/api/import/login')

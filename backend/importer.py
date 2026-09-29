@@ -70,8 +70,10 @@ def normalize(payload, options, start_index=1):
         if not isinstance(source, dict):
             raise UpstreamError(f'第 {index} 条 credentials / tokens 格式不正确', 400)
         credentials = dict(source) if entry.get('credentials') else {key: source[key] for key in ('access_token', 'refresh_token', 'id_token', 'api_key', 'base_url', 'account_id', 'email', 'expires_at', 'chatgpt_account_id', 'chatgpt_user_id', 'organization_id', 'model_mapping') if key in source}
-        if options.model_mappings:
-            credentials['model_mapping'] = {item.source: item.target for item in options.model_mappings}
+        if options.model_whitelist or options.model_mappings:
+            credentials['model_mapping'] = {model: model for model in options.model_whitelist}
+            # 与 Sub2API 的组合模式一致，同名冲突以显式映射为准。
+            credentials['model_mapping'].update({item.source: item.target for item in options.model_mappings})
         if entry.get('OPENAI_API_KEY'):
             credentials['api_key'] = entry['OPENAI_API_KEY']
         kind = 'apikey' if credentials.get('api_key') else 'oauth'
@@ -96,7 +98,7 @@ def normalize(payload, options, start_index=1):
         if len(name) > 120:
             raise UpstreamError(f'第 {index} 条账号名称超过 120 字符', 400)
         names.add(name)
-        account = options.model_dump(exclude={'pool', 'name_template', 'duplicate', 'model_mappings'})
+        account = options.model_dump(exclude={'pool', 'name_template', 'duplicate', 'model_mappings', 'model_whitelist'})
         account.update(name=name, platform='openai', type=kind, credentials=credentials)
         expires = entry.get('expires_at')
         if expires:

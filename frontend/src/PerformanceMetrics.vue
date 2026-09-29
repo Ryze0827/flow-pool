@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Activity } from 'lucide-vue-next'
+import { RefreshCw } from 'lucide-vue-next'
 import { api } from './api'
 
 const metrics = ref(null)
@@ -48,7 +48,7 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
 
 <template>
   <div class="stat-card performance-card" :title="detail">
-    <div class="stat-label">性能指标 <Activity :size="17" class="purple-text"/></div>
+    <div class="stat-label">性能指标 <button class="icon-button performance-refresh" type="button" :disabled="loading" :aria-busy="loading" title="刷新性能指标" aria-label="刷新性能指标" @click="refresh"><RefreshCw :size="17" :class="{ spinning: loading }"/></button></div>
     <div class="stat-value"><strong>{{ sample?.rpm ?? '—' }}</strong><span>RPM</span></div>
     <div class="stat-foot"><span :class="{ 'orange-text': warning }">{{ status }}</span><span>· 30s 刷新</span></div>
   </div>
@@ -56,6 +56,7 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
 
 <style scoped>
 .performance-card { min-width: 0; }
+.performance-refresh { width: 28px; height: 28px; margin: -6px; }
 .stat-value { display: flex; align-items: baseline; }
 .stat-value strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: inherit; }
 .stat-value > span { flex-shrink: 0; }
