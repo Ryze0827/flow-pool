@@ -85,11 +85,11 @@ class Mailer:
             return
         validate_mail(settings)
         stamp = datetime.fromtimestamp(sample['sampled_at']).astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
-        body = (f"统计范围：全站 GPT / OpenAI 账号最近 60 秒已落库调用\n"
+        body = (f"统计口径：Sub2API 总览 RPM（全站最近 5 分钟调用数 ÷ 5，取整数）\n"
                 f"采样时间：{stamp}\n当前 RPM：{sample['rpm']}\n上次 RPM：{sample['previous_rpm']}\n"
                 f"增长率：{sample['growth_percent']:.1f}%（阈值：严格超过 100%）\n"
                 "采样间隔：30 秒；本告警不改变账号调度状态。\n")
-        payload = dict(subject='GPT RPM 增长告警', body=body, recipients=settings.recipients, message_id=make_msgid())
+        payload = dict(subject='RPM 增长告警', body=body, recipients=settings.recipients, message_id=make_msgid())
         # One notification per sample, shared by every browser and persisted across retries.
         return self.store.queue_mail('rpm', payload, event_key=f"rpm:{identity}:{sample['sampled_at']}")
 

@@ -63,45 +63,28 @@ class Analytics:
                 'pages': max(1, (total + page_size - 1) // page_size)}
 
     async def rpm(self):
-        """Completed GPT calls in (sample time - 60s, sample time], including unmanaged accounts."""
-        if postgres_configured(self.store):
-            async with self.snapshot() as cursor:
-                await cursor.execute('''SELECT COUNT(*) AS rpm, CURRENT_TIMESTAMP AS sampled_at
-                    FROM usage_logs u JOIN accounts a ON a.id = u.account_id AND a.deleted_at IS NULL
-                    WHERE a.platform = %s AND u.created_at > CURRENT_TIMESTAMP - INTERVAL '60 seconds'
-                      AND u.created_at <= CURRENT_TIMESTAMP''', ('openai',))
-                row = await cursor.fetchone()
-            return {'rpm': int(row['rpm']), 'sampled_at': row['sampled_at'].timestamp(), 'source': 'postgres'}
+        """Use exactly the RPM displayed by Sub2API's dashboard (five-minute average)."""
         async with self.api() as client:
-            # Usage AccountSummary exposes only id/name, not platform. Resolve
-            # membership through the existing platform-filtered accounts API.
-            account_ids = {account['id'] for account in await client.accounts()}
-            seen, count, end = set(), 0, None
-            for page in range(1, 101):
-                result = await client.request('GET', 'usage', params={
-                    'page': page, 'page_size': 100, 'sort_by': 'created_at', 'sort_order': 'desc'})
-                if end is None:
-                    end = client.now()
-                items = result.get('items')
-                if not isinstance(items, list):
-                    raise UpstreamError('RPM 调用记录响应无效，本轮不计算增长率')
-                crossed = False
-                for item in items:
-                    try:
-                        created = datetime.fromisoformat(item['created_at'].replace('Z', '+00:00')).timestamp()
-                        key = int(item['id'])
-                    except (KeyError, ValueError, TypeError, AttributeError):
-                        raise UpstreamError('RPM 调用记录时间无效，本轮不计算增长率') from None
-                    if created <= end - 60:
-                        crossed = True
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    if end - 60 < created <= end and item.get('account_id') in account_ids:
-                        count += 1
-                if crossed or len(items) < 100:
-                    return {'rpm': count, 'sampled_at': end, 'source': 'api'}
-            raise UpstreamError('RPM 调用记录超过 10,000 条扫描上限，请配置 PG；本轮不计算增长率')
+            result = await client.request('GET', 'dashboard/snapshot-v2', params={
+                'granularity': 'hour', 'timezone': 'Asia/Shanghai',
+                'include_stats': 'true', 'include_trend': 'false',
+                'include_model_stats': 'false', 'include_group_stats': 'false',
+                'include_users_trend': 'false',
+            })
+            try:
+                rpm = result['stats']['rpm']
+                if type(rpm) is not int or rpm < 0:
+                    raise ValueError('Invalid RPM')
+                stamp = datetime.fromisoformat(result['generated_at'].replace('Z', '+00:00'))
+                if stamp.tzinfo is None:
+                    raise ValueError('Missing timezone')
+                sampled_at = stamp.timestamp()
+                age = client.now() - sampled_at
+                if age > 65 or age < -5:
+                    raise ValueError('Stale snapshot')
+            except (KeyError, ValueError, TypeError, AttributeError, OverflowError):
+                raise UpstreamError('Sub2API RPM 快照缺失、无效或已过期，本轮不计算增长率') from None
+            return {'rpm': rpm, 'sampled_at': sampled_at, 'source': 'snapshot-v2'}
 
     async def pools(self, limit):
         records = {pool: [] for pool in POOLS}

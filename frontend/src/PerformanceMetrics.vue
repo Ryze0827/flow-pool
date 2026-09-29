@@ -24,7 +24,7 @@ const status = computed(() => {
 })
 const warning = computed(() => Boolean(error.value || metrics.value?.error || stale.value || metrics.value?.mail_error || sample.value?.alert))
 const detail = computed(() => {
-  const parts = ['全站 GPT · 最近 60 秒调用 · 较上次采样增长超过 100% 时邮件告警']
+  const parts = ['Sub2API 总览 · 全站最近 5 分钟平均 RPM · 较上次采样增长超过 100% 时邮件告警']
   if (sample.value) parts.push(`采样时间：${new Date(sample.value.sampled_at * 1000).toLocaleTimeString('zh-CN', { hour12: false })}`)
   parts.push(metrics.value?.mail_enabled ? '邮件告警已开启' : '邮件告警未开启')
   if (error.value || metrics.value?.error) parts.push(error.value || metrics.value.error)

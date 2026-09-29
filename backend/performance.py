@@ -1,7 +1,6 @@
 """Independent 30-second RPM sampling; browser reads never trigger mail or queries."""
 import asyncio
 import hashlib
-import os
 import time
 from collections import deque
 
@@ -29,11 +28,8 @@ class PerformanceMonitor:
 
     def connection_identity(self):
         settings = self.store.settings()
-        # Bound comparisons to the same backend and data source; never expose this payload.
-        # Include the full legacy DSN without serializing credentials to UI/logs.
-        dsn = os.environ.get('FLOWPOOL_SUB2API_PG_DSN', '') if self.store.postgres_source() == 'environment' else ''
-        return hashlib.sha256((settings.base_url + settings.admin_key + dsn +
-                               self.store.postgres_settings().model_dump_json()).encode()).hexdigest()
+        # RPM always uses the same dashboard API, regardless of PG configuration.
+        return hashlib.sha256(('snapshot-v2:' + settings.base_url + settings.admin_key).encode()).hexdigest()
 
     def status(self):
         mail = self.store.mail_settings()
@@ -41,7 +37,7 @@ class PerformanceMonitor:
         stale = bool(self.sample and time.time() - self.sample['received_at'] > 65)
         return {'sample': self.sample, 'history': list(self.history), 'error': self.error,
                 'mail_error': self.mail_error, 'configured': configured, 'stale': stale,
-                'interval_seconds': INTERVAL_SECONDS, 'window_seconds': 60,
+                'interval_seconds': INTERVAL_SECONDS, 'window_seconds': 300,
                 'next_check_at': self.next_check_at, 'mail_enabled': mail.enabled and mail.notify_rpm}
 
     async def tick(self):
@@ -63,6 +59,10 @@ class PerformanceMonitor:
                     raise UpstreamError('采样期间连接配置变化，下轮重新建立 RPM 基线')
                 received = time.time()
                 previous = self.previous
+                if previous and current['sampled_at'] <= previous['sampled_at']:
+                    # Snapshot endpoint caches for 30 seconds. A cached read is not a new sample.
+                    self.error = ''
+                    return
                 comparable = previous is not None and 0 < current['sampled_at'] - previous['sampled_at'] <= 65
                 before = previous['rpm'] if comparable else None
                 growth = (current['rpm'] - before) / before * 100 if before else (0 if before == 0 and current['rpm'] == 0 else None)
@@ -74,7 +74,7 @@ class PerformanceMonitor:
                 self.history.append({'rpm': current['rpm'], 'sampled_at': current['sampled_at']})
                 self.error = self.mail_error = ''
                 if alert:
-                    self.store.event('rpm_alert', f"GPT RPM 从 {before} 增至 {current['rpm']}，增长 {growth:.1f}%（超过 100%）", level='warning')
+                    self.store.event('rpm_alert', f"RPM 从 {before} 增至 {current['rpm']}，增长 {growth:.1f}%（超过 100%）", level='warning')
                     try:
                         self.mailer.enqueue_rpm(self.sample, identity)
                     except MailError as error:
