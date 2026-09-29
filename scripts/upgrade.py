@@ -147,14 +147,28 @@ class Upgrade:
 from fastapi.testclient import TestClient
 with tempfile.TemporaryDirectory() as data:
     os.environ['SCHEDULER_DATA_DIR'] = data
+    os.environ.pop('FLOWPOOL_SUB2API_URL', None)
+    os.environ.pop('FLOWPOOL_SUB2API_PG_DSN', None)
+    os.environ['FLOWPOOL_ALLOWED_HOSTS'] = 'testserver'
     from backend.main import app
     with TestClient(app) as client:
-        assert client.get('/api/health').json()['service'] == 'gpt-account-scheduler'
-        assert client.get('/api/settings').status_code == 200
-        assert client.get('/api/upgrade').status_code == 200
-        assert 'instance' in client.get('/api/health').json()
-        assert client.get('/import').status_code == 200
-        assert 'image/svg+xml' in client.get('/favicon.svg').headers['content-type']
+        health = client.get('/api/health')
+        assert health.status_code == 200
+        assert health.json()['ok'] is True
+        assert health.json()['service'] == 'gpt-account-scheduler'
+        assert 'instance' in health.json()
+        auth = client.get('/api/auth/status')
+        assert auth.status_code == 200
+        assert auth.json()['authenticated'] is False
+        assert auth.json()['configured'] is False
+        for path in ('/api/settings', '/api/upgrade', '/api/performance'):
+            assert client.get(path).status_code == 401, path
+        page = client.get('/import')
+        assert page.status_code == 200
+        assert 'text/html' in page.headers['content-type']
+        icon = client.get('/favicon.svg')
+        assert icon.status_code == 200
+        assert 'image/svg+xml' in icon.headers['content-type']
 """
         self.command([str(self.candidate / '.venv/bin/python'), '-c', smoke], cwd=self.candidate, timeout=90, env=candidate_env)
         return True
