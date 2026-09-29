@@ -84,7 +84,7 @@ class Sub2Postgres:
                 'SELECT user_id, group_id FROM user_allowed_groups LIMIT 0',
                 'SELECT user_id, group_id, rate_multiplier FROM user_group_rate_multipliers LIMIT 0',
                 'SELECT id, account_id, group_id, model, reasoning_effort, first_token_ms, duration_ms, created_at FROM usage_logs LIMIT 0',
-                'SELECT id, name, deleted_at FROM accounts LIMIT 0',
+                'SELECT id, name, platform, deleted_at FROM accounts LIMIT 0',
             ):
                 await cursor.execute(query)
         return {'ok': True, 'message': f"已连接数据库 {info['database']}，只读查询及 Sub2API 后端一致性校验通过"}

@@ -28,6 +28,7 @@ from .upstream_auth import UpstreamAuth
 from .rate_inspection import RateInspection, select_groups
 from .postgres import Sub2Postgres, resolve_postgres_settings
 from .analytics import Analytics
+from .performance import PerformanceMonitor
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('SCHEDULER_DATA_DIR', ROOT / 'data'))
@@ -38,12 +39,13 @@ account_login = None
 mailer = None
 upstream_auth = None
 rate_inspection = None
+performance = None
 POOL_NAMES = {'priority': '高权重组', 'risk': '风控组', 'third_party': '三方账号组'}
 
 
 @asynccontextmanager
 async def lifespan(app):
-    global store, scheduler, importer, account_login, mailer, upstream_auth, rate_inspection
+    global store, scheduler, importer, account_login, mailer, upstream_auth, rate_inspection, performance
     DATA.mkdir(parents=True, exist_ok=True)
     lock_file = (DATA / 'worker.lock').open('w')
     try:
@@ -54,6 +56,7 @@ async def lifespan(app):
     upstream_auth = UpstreamAuth(store)
     rate_inspection = RateInspection(store)
     mailer = Mailer(store)
+    performance = PerformanceMonitor(store, mailer)
     scheduler = Scheduler(store, mailer)
     importer = Importer(store, scheduler)
     account_login = AccountLogin()
@@ -66,9 +69,13 @@ async def lifespan(app):
         await worker.run()
     task = asyncio.create_task(after_deploy(scheduler))
     mail_task = asyncio.create_task(after_deploy(mailer))
+    performance_task = asyncio.create_task(after_deploy(performance))
     try:
         yield
     finally:
+        performance_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await performance_task
         await scheduler.close()
         await account_login.close()
         task.cancel()
@@ -295,7 +302,7 @@ async def mail_settings_put(value: MailSettings):
         if value.enabled:
             validate_mail(value)
         store.save_mail_settings(value)
-        for kind in ('warning', 'cooldown'):
+        for kind in ('warning', 'cooldown', 'recovery', 'rpm'):
             if not value.enabled or not getattr(value, 'notify_' + kind):
                 store.db.execute("UPDATE mail_messages SET status='skipped', error='对应邮件通知已关闭' WHERE kind=? AND status='pending'", (kind,))
         store.db.commit()
@@ -405,6 +412,11 @@ async def dashboard():
             'configured': bool(store.settings().admin_key and store.settings().base_url), 'now': time.time()}
 
 
+@app.get('/api/performance')
+async def performance_get():
+    return performance.status()
+
+
 @app.get('/api/usage')
 async def usage(page: int = 1, page_size: int = 50):
     page = max(1, min(page, 10000))
@@ -473,6 +485,9 @@ async def account_action(account_id: int, action: str):
                     reason = '手动结束冷却，立即恢复调度' if account['resume_at'] is not None else '手动恢复调度'
                     if account['pool'] in rule.guarded_pools:
                         reason += '，进入观察期'
+                    # 手动恢复也使用实时分组识别生图冷却，兼容缺少模式标记的旧记录。
+                    store.update(account_id, remote=public_account(remote))
+                    account = store.account(account_id)
                     await scheduler.resume(client, account, rule, reason, restore_groups=account['pool'] == 'third_party')
     return {'ok': True}
 

@@ -38,6 +38,8 @@ class MailSettings(BaseModel):
     recipients: list[str] = Field(default_factory=list, max_length=20)
     notify_warning: bool = True
     notify_cooldown: bool = True
+    notify_recovery: bool = True
+    notify_rpm: bool = True
     warning_interval_seconds: int = Field(900, ge=60, le=86400)
 
     @field_validator('smtp_host', 'smtp_username', 'smtp_from_name')

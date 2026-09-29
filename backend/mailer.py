@@ -79,8 +79,22 @@ class Mailer:
         self.store = store
         self.lock = asyncio.Lock()
 
+    def enqueue_rpm(self, sample, identity):
+        settings = self.store.mail_settings()
+        if not settings.enabled or not settings.notify_rpm:
+            return
+        validate_mail(settings)
+        stamp = datetime.fromtimestamp(sample['sampled_at']).astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
+        body = (f"统计范围：全站 GPT / OpenAI 账号最近 60 秒已落库调用\n"
+                f"采样时间：{stamp}\n当前 RPM：{sample['rpm']}\n上次 RPM：{sample['previous_rpm']}\n"
+                f"增长率：{sample['growth_percent']:.1f}%（阈值：严格超过 100%）\n"
+                "采样间隔：30 秒；本告警不改变账号调度状态。\n")
+        payload = dict(subject='GPT RPM 增长告警', body=body, recipients=settings.recipients, message_id=make_msgid())
+        # One notification per sample, shared by every browser and persisted across retries.
+        return self.store.queue_mail('rpm', payload, event_key=f"rpm:{identity}:{sample['sampled_at']}")
+
     def enqueue(self, account, action, message, rule):
-        kind = 'cooldown' if action in {'停止调度', '仅生图调度'} else 'warning' if action in {'告警', '暂缓停调', '停调未确认', '冷却切换未确认', '提前恢复调度', '恢复未确认'} else None
+        kind = 'recovery' if action == '冷却恢复' else 'cooldown' if action in {'停止调度', '仅生图调度'} else 'warning' if action in {'告警', '暂缓停调', '停调未确认', '冷却切换未确认', '提前恢复调度', '恢复未确认'} else None
         if kind is None:
             return
         settings = self.store.mail_settings()
@@ -90,6 +104,8 @@ class Mailer:
             return
         validate_mail(settings)
         current = self.store.account(account['id'])
+        if kind == 'recovery' and (account.get('resume_at') is None or current['resume_at'] is not None or current['state'] not in {'active', 'probation'}):
+            return
         if kind == 'warning':
             if not rule.enabled or current['pool'] not in rule.guarded_pools:
                 return
@@ -98,13 +114,15 @@ class Mailer:
                 count = sum(now - rule.breach_window_seconds < stamp <= now for stamp in current['breach_times'])
                 if count < rule.breach_count:
                     return
-        label = '冷却通知' if kind == 'cooldown' else '首字延迟告警'
+        label = {'cooldown': '冷却通知', 'recovery': '冷却恢复通知', 'warning': '首字延迟告警'}[kind]
         name = ' '.join(current['name'].splitlines())
         subject = label
         measures = {'告警': '告警，继续调度', '暂缓停调': '暂缓冷却，继续调度',
                     '停调未确认': '停止调度未确认，等待重试', '冷却切换未确认': '生图冷却未确认，等待重试',
                     '提前恢复调度': '替补不可用，已提前恢复当前账号', '恢复未确认': '替补不可用，当前账号恢复待重试'}
         measure = measures.get(action, action)
+        if kind == 'recovery':
+            measure = '已恢复调度；' + message
         if kind == 'cooldown':
             restore = datetime.fromtimestamp(current['resume_at']).astimezone().strftime('%H:%M')
             measure += f'，{restore} 恢复全部分组' if current.get('cooldown_mode') == 'image' else f'，{restore} 恢复调度'
@@ -114,6 +132,9 @@ class Mailer:
         body = f"账号：{name}（#{account['id']} · {POOL_NAMES[current['pool']]}）\n措施：{measure}\n拉起账号：{replacement_text}\n"
         payload = dict(subject=subject, body=body, recipients=settings.recipients, message_id=make_msgid())
         key = f"cooldown:{account['id']}:{current['resume_at']}" if kind == 'cooldown' else None
+        if kind == 'recovery':
+            # 使用恢复前的冷却截止时间区分轮次，不受告警限频影响。
+            key = f"recovery:{account['id']}:{account['resume_at']}"
         self.store.queue_mail(kind, payload, account['id'], key, settings.warning_interval_seconds if kind == 'warning' else 0)
 
     async def run(self):

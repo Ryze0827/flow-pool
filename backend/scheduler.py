@@ -162,6 +162,11 @@ class Scheduler:
         if state == 'resuming':
             await self.finish_resume(client, account, rule)
             return
+        if state == 'cooldown' and image_only and account.get('cooldown_mode') != 'image':
+            # 已退避到生图的旧记录可能没有模式标记，且不一定属于三方号池。
+            # 补齐恢复责任，保留原截止时间；可调度是生图冷却的正常状态。
+            self.store.update(account_id, cooldown_mode='image')
+            account = self.store.account(account_id)
         if state == 'cooldown' and (account.get('cooldown_mode') == 'image' or account['pool'] == 'third_party'):
             if time.time() >= account['resume_at']:
                 # 旧版三方冷却也按新规则恢复所有正常 GPT 分组。
@@ -401,7 +406,6 @@ class Scheduler:
             raise
         self.record_inspection(account, self.store.account(account['id'])['state'], account['sample'], account['slow_count'],
                                '提前恢复调度', reason, rule=rule, notify=False)
-        self.notify(account, '提前恢复调度', reason, rule)
 
     async def pause(self, client, account, rule, reason, manual=False):
         # 先落库意图，再调用幂等开关。进程中断时下一轮可完成未提交状态。
@@ -492,7 +496,7 @@ class Scheduler:
                                    '停止调度', f"{account['reason']}；{detail}；已停止调度", rule=rule, notify=False)
 
     async def resume(self, client, account, rule, reason=None, restore_groups=False):
-        if account['pool'] == 'third_party' and account['resume_at'] is not None and not account.get('cooldown_mode'):
+        if account['resume_at'] is not None and not account.get('cooldown_mode') and (account['pool'] == 'third_party' or image_only_account(account['remote'])):
             self.store.update(account['id'], cooldown_mode='image')
             account = self.store.account(account['id'])
         if reason is None:
@@ -504,7 +508,7 @@ class Scheduler:
         await self.finish_resume(client, self.store.account(account['id']), rule)
 
     async def finish_resume(self, client, account, rule):
-        if account['pool'] == 'third_party' and account['resume_at'] is not None and not account.get('cooldown_mode'):
+        if account['resume_at'] is not None and not account.get('cooldown_mode') and (account['pool'] == 'third_party' or image_only_account(account['remote'])):
             self.store.update(account['id'], cooldown_mode='image')
             account = self.store.account(account['id'])
         restore_groups = bool(account.get('restore_all_groups') or account.get('cooldown_mode') == 'image')
@@ -517,12 +521,11 @@ class Scheduler:
             account = self.store.account(account['id'])
         watermark = await Analytics(self.store, client).watermark(account['id'])
         await client.set_schedulable(account['id'], True)
-        if restore_groups:
-            remote = await client.account(account['id'])
-            if remote.get('schedulable') is not True or set(remote.get('group_ids') or []) != {group['id'] for group in groups}:
-                raise UpstreamError('恢复后的分组 / 调度状态尚未确认，下轮重试')
-            self.store.update(account['id'], remote=public_account(remote))
-            account = self.store.account(account['id'])
+        remote = await client.account(account['id'])
+        if remote.get('status') != 'active' or remote.get('schedulable') is not True or (restore_groups and set(remote.get('group_ids') or []) != {group['id'] for group in groups}):
+            raise UpstreamError('恢复后的分组 / 调度状态尚未确认，下轮重试')
+        self.store.update(account['id'], remote=public_account(remote))
+        account = self.store.account(account['id'])
         reason = account['reason']
         if restore_groups:
             reason += '；已绑定：' + '、'.join(f"{group['name']} #{group['id']}" for group in groups)
@@ -541,3 +544,5 @@ class Scheduler:
                           error=None, reason=reason, cooldown_mode='', restore_all_groups=False, cooldown_replacement_id=None,
                           remote={**account['remote'], 'schedulable': True})
         self.store.event('resume', reason or ('恢复调度，进入观察期' if monitored else '恢复调度'), account['id'])
+        if account['resume_at'] is not None:
+            self.notify(account, '冷却恢复', reason or '冷却结束', rule)
