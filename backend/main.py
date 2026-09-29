@@ -459,8 +459,11 @@ async def enroll(value: Enroll):
 @app.put('/api/accounts/{account_id}/guard')
 async def account_guard_put(account_id: int, value: GuardUpdate):
     async with scheduler.lock:
-        if not store.account(account_id):
+        account = store.account(account_id)
+        if not account:
             raise HTTPException(404, '账号未录入本地号池')
+        if account['pool'] not in store.settings().rule.guarded_pools:
+            raise HTTPException(409, '所属分组未纳入守护，请先开启分组风控')
         store.set_guard(account_id, value.enabled)
         store.event('guard', '账号风控已' + ('开启' if value.enabled else '关闭'), account_id)
     return {'ok': True}

@@ -29,9 +29,11 @@ class Rule(BaseModel):
 
 
 def account_guarded(account, rule):
-    # 未单独设置的旧账号 / 新账号沿用分组默认值；显式账号设置优先。
+    # 分组守护是前置条件；组内未单独设置的账号默认开启。
+    if account.get('pool') not in rule.guarded_pools:
+        return False
     value = account.get('guard_enabled')
-    return bool(value) if value is not None else account.get('pool') in rule.guarded_pools
+    return bool(value) if value is not None else True
 
 
 class GuardUpdate(BaseModel):
