@@ -73,7 +73,7 @@ class Store:
         ''')
         # 兼容已有数据库，达限计数独立持久化，不依赖巡检日志保留数量。
         for table, columns in {
-            'accounts': {'breach_times': "TEXT NOT NULL DEFAULT '[]'", 'breach_sample': "TEXT NOT NULL DEFAULT ''", 'last_breach_at': 'REAL', 'cooldown_mode': "TEXT NOT NULL DEFAULT ''", 'restore_all_groups': 'INTEGER NOT NULL DEFAULT 0', 'relogin_last_at': 'REAL', 'relogin_error': "TEXT NOT NULL DEFAULT ''", 'relogin_count': 'INTEGER NOT NULL DEFAULT 0'},
+            'accounts': {'guard_enabled': 'INTEGER', 'breach_times': "TEXT NOT NULL DEFAULT '[]'", 'breach_sample': "TEXT NOT NULL DEFAULT ''", 'last_breach_at': 'REAL', 'cooldown_mode': "TEXT NOT NULL DEFAULT ''", 'restore_all_groups': 'INTEGER NOT NULL DEFAULT 0', 'relogin_last_at': 'REAL', 'relogin_error': "TEXT NOT NULL DEFAULT ''", 'relogin_count': 'INTEGER NOT NULL DEFAULT 0'},
             'inspections': {'breach_count': 'INTEGER', 'breach_limit': 'INTEGER', 'breach_window_seconds': 'INTEGER'},
         }.items():
             existing = {row['name'] for row in self.db.execute(f'PRAGMA table_info({table})')}
@@ -199,7 +199,7 @@ class Store:
 
     def update(self, account_id, **values):
         allowed = {'name', 'pool', 'state', 'remote', 'resume_at', 'epoch', 'watermark', 'probation_until', 'sample', 'slow_count', 'last_checked', 'error', 'reason', 'breach_times', 'breach_sample', 'last_breach_at', 'cooldown_mode', 'restore_all_groups', 'relogin_last_at', 'relogin_error', 'relogin_count'}
-        allowed.update({'cooldown_count', 'cooldown_replacement_id', 'relogin_failures'})
+        allowed.update({'guard_enabled', 'cooldown_count', 'cooldown_replacement_id', 'relogin_failures'})
         allowed.update({'post_import_until', 'post_import_batch_id', 'post_import_health'})
         if not values.keys() <= allowed:
             raise ValueError('Invalid account fields')
@@ -211,6 +211,16 @@ class Store:
                 values[key] = json.dumps(values[key])
         self.db.execute(f"UPDATE accounts SET {', '.join(key + '=?' for key in values)} WHERE id=?", (*values.values(), account_id))
         self.db.commit()
+
+    def set_guard(self, account_id, enabled):
+        account = self.account(account_id)
+        values = dict(guard_enabled=enabled, breach_times=[], breach_sample='', last_breach_at=None,
+                      sample=[], slow_count=0, last_checked=None)
+        if account['state'] in {'active', 'probation'}:
+            values['reason'] = '账号风控已开启，等待新一轮巡检' if enabled else '账号风控已关闭'
+            if not enabled:
+                values.update(state='active', probation_until=None)
+        self.update(account_id, **values)
 
     def remove(self, account_id):
         self.db.execute('DELETE FROM accounts WHERE id=?', (account_id,))

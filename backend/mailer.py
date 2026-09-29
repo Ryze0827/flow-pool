@@ -8,6 +8,8 @@ from datetime import datetime
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 
+from .models import account_guarded
+
 
 POOL_NAMES = {'priority': '高权重组', 'risk': '风控组', 'third_party': '三方账号组'}
 
@@ -107,7 +109,7 @@ class Mailer:
         if kind == 'recovery' and (account.get('resume_at') is None or current['resume_at'] is not None or current['state'] not in {'active', 'probation'}):
             return
         if kind == 'warning':
-            if not rule.enabled or current['pool'] not in rule.guarded_pools:
+            if not rule.enabled or not account_guarded(current, rule):
                 return
             if action == '暂缓停调':
                 now = time.time()

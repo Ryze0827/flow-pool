@@ -7,7 +7,7 @@ from datetime import datetime
 
 from pydantic import ValidationError
 
-from .models import ImportOptions, ReloginImport
+from .models import account_guarded, ImportOptions, ReloginImport
 from .sub2api import UpstreamError, public_account
 
 POOL_NAMES = {'priority': '高权重组', 'risk': '风控组', 'third_party': '三方账号组'}
@@ -294,7 +294,7 @@ class Importer:
                     # JSON 原位覆盖或不可复用的验证码登录不继承旧账密恢复能力。
                     self.store.clear_recovery(remote['id'])
                 rule = self.store.settings().rule
-                reason = '推送入池，开始恢复观察' if options.pool in rule.guarded_pools else '推送入池，开启调度'
+                reason = '推送入池，开始恢复观察' if account_guarded(self.store.account(remote['id']), rule) else '推送入池，开启调度'
                 await self.scheduler.resume(client, self.store.account(remote['id']), rule, reason)
                 self.store.update(remote['id'], post_import_batch_id=batch['id'], post_import_until=time.time() + POST_IMPORT_SECONDS, post_import_health={})
                 completed_ids.append(remote['id'])

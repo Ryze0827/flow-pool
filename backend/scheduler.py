@@ -4,6 +4,7 @@ import math
 import time
 import contextlib
 
+from .models import account_guarded
 from .sub2api import Sub2API, UpstreamError, image_only_account, public_account
 from .batch_health import authentication_failed, post_import_observing, observation_error, inspect_item
 from .analytics import Analytics
@@ -200,7 +201,7 @@ class Scheduler:
                 await self.resume(client, account, rule, '检测到上游手动启用调度', restore_groups=True)
                 return
             # 外部恢复只对齐本地状态，不再次写入上游调度开关。
-            monitored = account.get('pool') in rule.guarded_pools and not image_only
+            monitored = account_guarded(account, rule) and not image_only
             try:
                 watermark = await Analytics(self.store, client).watermark(account_id) if monitored else account['watermark']
             except UpstreamError:
@@ -222,7 +223,7 @@ class Scheduler:
         if observing and state == 'active':
             # 非守护号池也有推送后的健康观察，不把观察期转成新的自动冷却。
             return
-        if account.get('pool') not in rule.guarded_pools:
+        if not account_guarded(account, rule):
             return
         if not remote.get('schedulable'):
             self.store.update(account_id, error='上游已停止调度，本系统不会自动恢复外部暂停')
@@ -436,7 +437,7 @@ class Scheduler:
         automatic = account['resume_at'] is not None
         detail = ''
         if automatic:
-            if account['pool'] not in rule.guarded_pools or not rule.enabled or rule.alert_only or len(self.window_breaches(account, rule)) < rule.breach_count:
+            if not account_guarded(account, rule) or not rule.enabled or rule.alert_only or len(self.window_breaches(account, rule)) < rule.breach_count:
                 state = 'active' if rule.alert_only else ('probation' if account['probation_until'] is not None else 'active')
                 reason = '仅告警模式，继续调度' if rule.alert_only else '当前窗口未满足停调条件，继续巡检'
                 self.store.update(account['id'], state=state, resume_at=None, probation_until=None if rule.alert_only else account['probation_until'], reason=reason)
@@ -519,7 +520,7 @@ class Scheduler:
             self.store.update(account['id'], cooldown_mode='image')
             account = self.store.account(account['id'])
         if reason is None:
-            reason = '冷却结束，恢复调度' + ('并进入观察期' if account.get('pool') in rule.guarded_pools else '')
+            reason = '冷却结束，恢复调度' + ('并进入观察期' if account_guarded(account, rule) else '')
         if restore_groups or account.get('restore_all_groups') or account.get('cooldown_mode') == 'image':
             reason += '；恢复全部正常 GPT 分组'
         self.store.update(account['id'], state='resuming', reason=reason,
@@ -556,7 +557,7 @@ class Scheduler:
     def complete_resume(self, client, account, rule, watermark, reason):
         # HTTP Date 只有秒精度，额外留 1 秒边界，宁可少计边界请求也不计入旧调用。
         epoch = client.now() + 1
-        monitored = account.get('pool') in rule.guarded_pools and not image_only_account(account['remote'])
+        monitored = account_guarded(account, rule) and not image_only_account(account['remote'])
         self.store.update(account['id'], state='probation' if monitored else 'active', epoch=epoch, watermark=watermark,
                           probation_until=max(time.time() + rule.probation_seconds, account.get('post_import_until') or 0) if monitored else None, resume_at=None,
                           sample=[], slow_count=0, breach_times=[], breach_sample='', last_breach_at=None, last_checked=None,

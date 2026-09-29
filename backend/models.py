@@ -28,6 +28,16 @@ class Rule(BaseModel):
     poll_seconds: int = Field(20, ge=5, le=300)
 
 
+def account_guarded(account, rule):
+    # 未单独设置的旧账号 / 新账号沿用分组默认值；显式账号设置优先。
+    value = account.get('guard_enabled')
+    return bool(value) if value is not None else account.get('pool') in rule.guarded_pools
+
+
+class GuardUpdate(BaseModel):
+    enabled: bool
+
+
 class MailSettings(BaseModel):
     enabled: bool = False
     smtp_host: str = Field('', max_length=253)

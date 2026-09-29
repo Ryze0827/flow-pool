@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import AdminLogin, AdminLogin2FA, RateInspectionRequest, RateCorrectionRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, Pool, AdminLogin, AdminLogin2FA, RateInspectionRequest, RateCorrectionRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -357,12 +357,7 @@ async def settings_put(value: Settings):
         changed_pools = set(current.rule.guarded_pools) ^ set(value.rule.guarded_pools)
         for account in store.accounts():
             if account['pool'] in changed_pools:
-                values = dict(breach_times=[], breach_sample='', last_breach_at=None, sample=[], slow_count=0, last_checked=None)
-                if account['state'] in {'active', 'probation'}:
-                    values['reason'] = '守护范围已更新，等待新一轮巡检' if account['pool'] in value.rule.guarded_pools else '该号池已取消首字延迟守护'
-                    if account['pool'] not in value.rule.guarded_pools:
-                        values.update(state='active', probation_until=None)
-                store.update(account['id'], **values)
+                store.set_guard(account['id'], account['pool'] in value.rule.guarded_pools)
         store.save_settings(value)
         store.event('settings', '已更新连接配置 / 调度规则 / 上号默认参数')
     return await settings_get()
@@ -406,7 +401,9 @@ async def dashboard():
     accounts = store.accounts()
     account_map = {account['id']: account for account in accounts}
     recovery_ids = store.recovery_ids()
+    rule = store.settings().rule
     for account in accounts:
+        account['guard_enabled'] = account_guarded(account, rule)
         account['auto_relogin_available'] = account['id'] in recovery_ids
         account['auto_relogin_running'] = scheduler.relogin_account_id == account['id']
     return {'accounts': accounts, 'events': store.events(), 'inspections': store.inspections(), 'batches': [public_batch(b, store, account_map) for b in store.batches()],
@@ -459,6 +456,35 @@ async def enroll(value: Enroll):
     return {'count': len(remotes)}
 
 
+@app.put('/api/accounts/{account_id}/guard')
+async def account_guard_put(account_id: int, value: GuardUpdate):
+    async with scheduler.lock:
+        if not store.account(account_id):
+            raise HTTPException(404, '账号未录入本地号池')
+        store.set_guard(account_id, value.enabled)
+        store.event('guard', '账号风控已' + ('开启' if value.enabled else '关闭'), account_id)
+    return {'ok': True}
+
+
+@app.put('/api/pools/{pool}/guard')
+async def pool_guard_put(pool: Pool, value: GuardUpdate):
+    async with scheduler.lock:
+        settings = store.settings()
+        selected = set(settings.rule.guarded_pools)
+        if value.enabled:
+            selected.add(pool)
+        else:
+            selected.discard(pool)
+        settings.rule.guarded_pools = [name for name in POOL_NAMES if name in selected]
+        # 同值操作也覆盖账号的单独设置，不依赖分组默认值是否变化。
+        for account in store.accounts():
+            if account['pool'] == pool:
+                store.set_guard(account['id'], value.enabled)
+        store.save_settings(settings)
+        store.event('guard', f"{POOL_NAMES[pool]}全部账号风控已" + ('开启' if value.enabled else '关闭'))
+    return {'guarded_pools': settings.rule.guarded_pools}
+
+
 @app.post('/api/accounts/{account_id}/{action}')
 async def account_action(account_id: int, action: str):
     if action not in {'pause', 'resume', 'remove'}:
@@ -485,7 +511,7 @@ async def account_action(account_id: int, action: str):
                         if expiry_timestamp(remote['expires_at']) <= client.now():
                             raise HTTPException(409, '账号已到期，请先在 Sub2API 处理有效期')
                     reason = '手动结束冷却，立即恢复调度' if account['resume_at'] is not None else '手动恢复调度'
-                    if account['pool'] in rule.guarded_pools:
+                    if account_guarded(account, rule):
                         reason += '，进入观察期'
                     # 手动恢复也使用实时分组识别生图冷却，兼容缺少模式标记的旧记录。
                     store.update(account_id, remote=public_account(remote))
