@@ -37,10 +37,18 @@ const settings = ref(null)
 const data = ref({ accounts: [], events: [], inspections: [], batches: [], worker: {}, configured: false })
 const usagePoolRecords = ref({ priority: [], risk: [], third_party: [] })
 const usageTotal = ref(0)
-const usageActiveCounts = computed(() => Object.fromEntries(pools.map(pool => [pool.id, data.value.accounts.filter(account => account.pool === pool.id && ['active', 'probation'].includes(account.state) && account.remote?.status === 'active' && account.remote?.schedulable === true).length])))
+const usageActiveCounts = computed(() => Object.fromEntries(pools.map(pool => [pool.id, data.value.accounts.filter(account => account.pool === pool.id && ['active', 'probation'].includes(account.state) && account.remote?.schedulable === true && !availabilityIssue(account)).length])))
 const usageLoading = ref(false)
 const rankingOpen = ref(true)
 const ranking = ref([])
+// 占比每 30 秒更新，状态始终取账号列表的最新快照，避免把本地 active 当成上游可用。
+const rankingAccounts = computed(() => {
+  const accounts = new Map(data.value.accounts.map(account => [account.id, account]))
+  return ranking.value.flatMap(item => {
+    const account = accounts.get(item.account_id)
+    return account ? [{ ...item, account }] : []
+  })
+})
 const rankingSampleSize = ref(0)
 const rankingUpdatedAt = ref(0)
 const rankingLoading = ref(false)
@@ -532,7 +540,7 @@ onUnmounted(() => {
     </main>
     <aside v-if="settings && !['rates', 'settings'].includes(page)" class="ranking-sidebar" aria-label="调用占比排名">
       <button v-if="!rankingOpen && page !== 'rates'" class="button ranking-toggle" type="button" aria-controls="usage-ranking-sidebar" aria-expanded="false" @click="rankingOpen = true"><ListFilter :size="16"/>调用占比排名</button>
-      <section v-if="rankingOpen && page !== 'rates'" id="usage-ranking-sidebar" class="panel ranking-panel"><div class="panel-heading"><div><h2>调用占比排名</h2><p>最新 {{ rankingSampleSize }} 条调用 · {{ rankingRefreshText }}</p></div><button class="icon-button" type="button" aria-label="收起调用占比排名" @click="rankingOpen = false"><X :size="16"/></button></div><div class="ranking-list"><div v-for="(item, index) in ranking" :key="item.account_id" class="ranking-row"><span class="ranking-index">{{ index + 1 }}</span><div class="ranking-account"><strong>{{ item.account_name }}</strong><small>#{{ item.account_id }} · {{ poolName(item.pool) }} · {{ statuses[item.state] || item.state }}</small></div><strong class="ranking-share">{{ item.share.toFixed(1) }}%</strong></div><p v-if="!ranking.length" class="quiet-empty">暂无本地托管账号</p></div></section>
+      <section v-if="rankingOpen && page !== 'rates'" id="usage-ranking-sidebar" class="panel ranking-panel"><div class="panel-heading"><div><h2>调用占比排名</h2><p>最新 {{ rankingSampleSize }} 条调用 · {{ rankingRefreshText }}</p></div><button class="icon-button" type="button" aria-label="收起调用占比排名" @click="rankingOpen = false"><X :size="16"/></button></div><div class="ranking-list"><div v-for="(item, index) in rankingAccounts" :key="item.account_id" class="ranking-row"><span class="ranking-index">{{ index + 1 }}</span><div class="ranking-account"><strong>{{ item.account.name }}</strong><small>#{{ item.account_id }} · {{ poolName(item.account.pool) }} · {{ scheduleLabel(item.account) }}</small></div><strong class="ranking-share">{{ item.share.toFixed(1) }}%</strong></div><p v-if="!rankingAccounts.length" class="quiet-empty">暂无本地托管账号</p></div></section>
     </aside>
 
     <ReloginAccount v-if="page === 'import' && relogin" :batch="relogin.batch" :item="relogin.item" :source="relogin.source" @close="relogin = null" @loading="loginLoading = $event" @updated="reloginUpdated"/>
