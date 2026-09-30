@@ -1,6 +1,7 @@
 """Self-service invoices; billing remains in Sub2API, documents stay local."""
 import asyncio
 import hashlib
+import json
 import os
 import sqlite3
 import time
@@ -30,12 +31,12 @@ def money(value):
 
 class FeeTier(BaseModel):
     minimum: Decimal = Field(ge=0, max_digits=16, decimal_places=2)
-    rate: Decimal = Field(ge=0, le=100, max_digits=8, decimal_places=4)
+    fee: Decimal = Field(ge=0, max_digits=16, decimal_places=2)
 
 
 class InvoiceRules(BaseModel):
     enabled: bool = False
-    tiers: list[FeeTier] = Field(default_factory=lambda: [FeeTier(minimum=0, rate=0)], min_length=1, max_length=20)
+    tiers: list[FeeTier] = Field(default_factory=lambda: [FeeTier(minimum=0, fee=0)], min_length=1, max_length=20)
 
     @model_validator(mode='after')
     def ordered(self):
@@ -103,6 +104,16 @@ class Invoices:
         # A lost response must never trigger a new debit after restart.
         store.db.execute("UPDATE invoices SET charge_status='uncertain', note='扣费中服务中断，请核对 Sub2API 余额流水' WHERE charge_status='charging'")
         store.db.commit()
+        row = store.db.execute('SELECT payload FROM invoice_rules WHERE id=1').fetchone()
+        if row:
+            payload = json.loads(row['payload'])
+            if any('rate' in tier for tier in payload['tiers']):
+                # Percentage values become a draft; an administrator must confirm fixed fees.
+                value = InvoiceRules(enabled=False, tiers=[FeeTier(minimum=tier['minimum'],
+                                     fee=Decimal(str(tier.get('fee', tier.get('rate', 0)))).quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
+                                     for tier in payload['tiers']])
+                store.db.execute('UPDATE invoice_rules SET payload=? WHERE id=1', (value.model_dump_json(),))
+                store.event('invoice_rules', '旧百分比规则已转为固定手续费草稿，自助发票已关闭，请核对金额后保存并重新开启')
 
     def source(self):
         return self.store.settings().base_url
@@ -186,10 +197,10 @@ class Invoices:
         # Match the existing invoice page: invoice amount is credited USD balance.
         amount = sum((money(order['amount']) for order in orders), Decimal(0)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
         tier = next(tier for tier in reversed(rules.tiers) if amount >= tier.minimum)
-        fee = (amount * tier.rate / 100).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+        fee = tier.fee.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
         balance = money(user['balance'])
         snapshot = {'source': self.source(), 'user_id': user['id'], 'orders': orders,
-                    'amount': str(amount), 'fee': str(fee), 'rate': str(tier.rate), 'currency': 'USD',
+                    'amount': str(amount), 'fee': str(fee), 'fee_mode': 'fixed', 'currency': 'USD',
                     'rules_version': hashlib.sha256(rules.model_dump_json().encode()).hexdigest()}
         return {**snapshot, 'balance': str(balance), 'sufficient': balance >= fee,
                 'quote_token': self.store.seal({**snapshot, 'expires_at': time.time() + 900})}
@@ -210,7 +221,7 @@ class Invoices:
             if money(latest['balance']) < money(quote['fee']):
                 raise HTTPException(409, '余额不足，请充值后再提交')
             invoice_id, now = uuid.uuid4().hex, time.time()
-            payload = {key: quote[key] for key in ('orders', 'amount', 'fee', 'rate', 'currency')}
+            payload = {key: quote[key] for key in ('orders', 'amount', 'fee', 'fee_mode', 'currency')}
             payload.update(title=value.title, tax_id=value.tax_id, email=value.email, user_email=user.get('email', ''))
             try:
                 with self.store.db:

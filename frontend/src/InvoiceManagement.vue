@@ -5,6 +5,7 @@ import { api } from './api'
 
 const emit = defineEmits(['notify'])
 const rules = ref(null)
+const rulesError = ref('')
 const items = ref([])
 const page = ref(1)
 const pages = ref(1)
@@ -37,6 +38,22 @@ async function perform(operation, message) {
 async function load() {
   try { rules.value = await api('/invoices/rules'); await refresh() } catch (e) { error.value = e.message }
 }
+async function saveRules() {
+  if (busy.value) return
+  rulesError.value = ''
+  const minimums = rules.value.tiers.map(tier => Number(tier.minimum))
+  if (!minimums.includes(0)) {
+    rulesError.value = '首档金额起点必须为 0。配置更高金额的手续费时，请保留 0 档并增加档位。'; return
+  }
+  if (new Set(minimums).size !== minimums.length) {
+    rulesError.value = '金额起点不能重复，请为每个档位设置不同的起点。'; return
+  }
+  busy.value = true
+  try {
+    rules.value = await api('/invoices/rules', 'PUT', rules.value)
+    emit('notify', '手续费规则已保存')
+  } catch (e) { rulesError.value = e.message } finally { busy.value = false }
+}
 function open(item) { selected.value = item.id; note.value = '' }
 function review(action) {
   const item = detail.value
@@ -66,15 +83,16 @@ onUnmounted(() => clearInterval(polling))
 <template>
   <div class="invoice-management">
     <div v-if="error" class="notice error" role="alert"><CircleHelp :size="17"/>{{ error }}<button class="text-button" @click="error = ''; load()">重试</button></div>
-    <form v-if="rules" class="panel form-panel" @submit.prevent="perform(async () => { rules = await api('/invoices/rules', 'PUT', rules) }, '手续费规则已保存')">
-      <div class="card-title"><div><h2>发票手续费</h2><p>按充值入账金额（USD）匹配档位；审核通过后从账户余额扣除。</p></div><label class="check-row"><input v-model="rules.enabled" type="checkbox" :disabled="busy"/>开启自助发票</label></div>
+    <form v-if="rules" class="panel form-panel" @submit.prevent="saveRules">
+      <div class="card-title"><div><h2>发票手续费</h2><p>按充值入账金额（USD）匹配档位，每次申请收取该档固定手续费；审核通过后从账户余额扣除。</p></div><label class="check-row"><input v-model="rules.enabled" type="checkbox" :disabled="busy"/>开启自助发票</label></div>
       <div v-for="(tier, index) in rules.tiers" :key="index" class="invoice-tier">
         <label>金额起点（含，USD）<input v-model="tier.minimum" type="number" min="0" step="0.01" required :disabled="busy"/></label>
-        <label>手续费率（%）<input v-model="tier.rate" type="number" min="0" max="100" step="0.0001" required :disabled="busy"/></label>
+        <label>固定手续费（USD）<input v-model="tier.fee" type="number" min="0" step="0.01" required :disabled="busy"/></label>
         <button type="button" class="button" :disabled="busy || rules.tiers.length === 1" @click="rules.tiers.splice(index, 1)">删除档位</button>
       </div>
-      <p class="small muted">首档起点为 0。每档适用至下一档起点，按整笔申请金额计费，手续费保留两位小数。</p>
-      <div class="form-actions"><button type="button" class="button" :disabled="busy || rules.tiers.length >= 20" @click="rules.tiers.push({ minimum: '', rate: '' })"><Plus :size="15"/>增加档位</button><button class="button primary" :disabled="busy">保存规则</button></div>
+      <p class="small muted">首档起点必须为 0，金额起点不能重复；配置更高金额的手续费时，请保留 0 档并增加档位。每档适用至下一档起点，按合并后的申请总金额匹配档位，只收取一次固定手续费，金额最多两位小数。</p>
+      <p v-if="rulesError" class="notice error" role="alert">{{ rulesError }}</p>
+      <div class="form-actions"><button type="button" class="button" :disabled="busy || rules.tiers.length >= 20" @click="rules.tiers.push({ minimum: '', fee: '' })"><Plus :size="15"/>增加档位</button><button class="button primary" :disabled="busy">保存规则</button></div>
       <p class="small muted">发票邮件复用“邮件通知”中的 SMTP 配置，发送到申请邮箱；不受告警通知开关影响。</p>
     </form>
     <section class="panel">
@@ -90,7 +108,7 @@ onUnmounted(() => clearInterval(polling))
       <div class="modal-body">
         <div v-if="error" class="notice error" role="alert">{{ error }}</div>
         <p class="small muted">申请编号：{{ detail.id }}</p>
-        <dl class="invoice-details"><dt>抬头</dt><dd>{{ detail.title }}</dd><dt>税号</dt><dd>{{ detail.tax_id }}</dd><dt>接收邮箱</dt><dd>{{ detail.email }}</dd><dt>订单</dt><dd>{{ detail.orders.map(order => '#' + order.id).join('、') }}</dd><dt>开票金额</dt><dd>{{ amount(detail.amount) }}</dd><dt>手续费</dt><dd>{{ amount(detail.fee) }}（{{ detail.rate }}%）</dd><dt>状态</dt><dd>{{ statuses[detail.status] }}</dd></dl>
+        <dl class="invoice-details"><dt>抬头</dt><dd>{{ detail.title }}</dd><dt>税号</dt><dd>{{ detail.tax_id }}</dd><dt>接收邮箱</dt><dd>{{ detail.email }}</dd><dt>订单</dt><dd>{{ detail.orders.map(order => '#' + order.id).join('、') }}</dd><dt>开票金额</dt><dd>{{ amount(detail.amount) }}</dd><dt>手续费</dt><dd>{{ amount(detail.fee) }}（{{ detail.fee_mode === 'fixed' ? '固定金额' : detail.rate + '%' }}）</dd><dt>状态</dt><dd>{{ statuses[detail.status] }}</dd></dl>
         <p v-if="detail.note" class="notice">{{ detail.note }}</p>
         <template v-if="detail.status === 'pending'">
           <label>审核 / 核对说明<textarea v-model.trim="note" rows="3" maxlength="500" :disabled="busy" placeholder="驳回或核对扣费结果时必填"/></label>
