@@ -1,6 +1,9 @@
 """Sub2API metrics: parameterized PostgreSQL reads, API fallback when unconfigured."""
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import asyncio
+import os
+import time
 
 from fastapi import HTTPException
 
@@ -51,8 +54,20 @@ class Analytics:
             async with self.api() as client:
                 return await client.usage(page, page_size)
         async with self.snapshot() as cursor:
-            await cursor.execute('SELECT COUNT(*) AS total FROM usage_logs')
-            total = (await cursor.fetchone())['total']
+            # 总数短暂缓存，分页记录始终实时读取；连接配置变化自动失效。
+            identity = (self.store.settings().base_url, self.store.settings().admin_key,
+                        self.store.postgres_source(), self.store.postgres_settings().model_dump_json(),
+                        os.environ.get('FLOWPOOL_SUB2API_PG_DSN', '') if self.store.postgres_source() == 'environment' else '')
+            if not hasattr(self.store, '_usage_count_lock'):
+                self.store._usage_count_lock = asyncio.Lock()
+            async with self.store._usage_count_lock:
+                cached = getattr(self.store, '_usage_count_cache', None)
+                if cached and cached[0] == identity and time.monotonic() - cached[1] < 30:
+                    total = cached[2]
+                else:
+                    await cursor.execute('SELECT COUNT(*) AS total FROM usage_logs')
+                    total = int((await cursor.fetchone())['total'])
+                    self.store._usage_count_cache = (identity, time.monotonic(), total)
             await cursor.execute(f'''SELECT {USAGE_COLUMNS} FROM (
                 SELECT id, account_id, group_id, model, reasoning_effort, first_token_ms, duration_ms, created_at
                 FROM usage_logs ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s
@@ -61,6 +76,63 @@ class Analytics:
             items = records_json(await cursor.fetchall())
         return {'items': items, 'total': total, 'page': page, 'page_size': page_size,
                 'pages': max(1, (total + page_size - 1) // page_size)}
+
+    async def account_health(self, account_ids):
+        """Only the requested batch's health fields; never credentials or notes."""
+        ids = list(dict.fromkeys(account_ids))
+        if not ids:
+            return {}, time.time()
+        if not postgres_configured(self.store):
+            async with self.api() as client:
+                remotes = {}
+                for account_id in ids:
+                    try:
+                        remotes[account_id] = await client.account(account_id)
+                    except UpstreamError as error:
+                        if error.status != 404:
+                            raise
+                return remotes, client.now()
+        async with self.snapshot() as cursor:
+            await cursor.execute('''SELECT id, platform, type, status, schedulable, error_message,
+                    expires_at, auto_pause_on_expired, rate_limit_reset_at, overload_until,
+                    temp_unschedulable_until
+                FROM accounts WHERE id = ANY(%s::bigint[]) AND deleted_at IS NULL AND platform = 'openai' ''', (ids,))
+            rows = records_json(await cursor.fetchall())
+            await cursor.execute('SELECT EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) AS now')
+            now = float((await cursor.fetchone())['now'])
+        return {row['id']: row for row in rows}, now
+
+    async def account_snapshot(self, account_id):
+        """Persisted fields needed by routine scheduling, without runtime enrichment."""
+        if not postgres_configured(self.store):
+            async with self.api() as client:
+                return await client.account(account_id)
+        async with self.snapshot() as cursor:
+            await cursor.execute('''SELECT EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) AS database_now,
+                    a.id, a.name, a.platform, a.type, a.status, a.schedulable,
+                    a.priority, a.concurrency, a.created_at, a.expires_at, a.auto_pause_on_expired,
+                    a.rate_limit_reset_at, a.overload_until, a.temp_unschedulable_until, a.error_message,
+                    COALESCE((SELECT jsonb_agg(jsonb_build_object('id', g.id, 'name', g.name) ORDER BY g.id)
+                        FROM account_groups ag JOIN groups g ON g.id = ag.group_id
+                        WHERE ag.account_id = a.id AND g.deleted_at IS NULL), '[]'::jsonb) AS groups,
+                    jsonb_build_object(
+                        'codex_5h_used_percent', a.extra->'codex_5h_used_percent',
+                        'codex_5h_reset_at', a.extra->'codex_5h_reset_at',
+                        'codex_5h_reset_after_seconds', a.extra->'codex_5h_reset_after_seconds',
+                        'codex_7d_used_percent', a.extra->'codex_7d_used_percent',
+                        'codex_7d_reset_at', a.extra->'codex_7d_reset_at',
+                        'codex_7d_reset_after_seconds', a.extra->'codex_7d_reset_after_seconds',
+                        'codex_usage_updated_at', a.extra->'codex_usage_updated_at') AS extra
+                FROM accounts a WHERE a.id = %s AND a.deleted_at IS NULL AND a.platform = 'openai' ''', (account_id,))
+            row = await cursor.fetchone()
+        if not row:
+            raise UpstreamError('上游 GPT 账号不存在或已删除', 404)
+        database_now = row.pop('database_now', None)
+        if self.client is not None and database_now is not None:
+            self.client.clock_offset = float(database_now) - time.time()
+        account = records_json([row])[0]
+        account['group_ids'] = [group['id'] for group in account['groups']]
+        return account
 
     async def rpm(self):
         """Use exactly the RPM displayed by Sub2API's dashboard (five-minute average)."""

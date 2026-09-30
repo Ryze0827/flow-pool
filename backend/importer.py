@@ -421,7 +421,8 @@ class Importer:
                     self.store.update(account_id, remote=public_account(refreshed), error=None,
                                       sample=[], slow_count=0, breach_times=[], breach_sample='', last_breach_at=None, last_checked=None)
                 else:
-                    watermark = await client.watermark(account_id)
+                    from .analytics import Analytics
+                    watermark = await Analytics(self.store, client).watermark(account_id)
                     await client.set_schedulable(account_id, True)
                     refreshed = await client.account(account_id)
                     if refreshed.get('schedulable') is not True:

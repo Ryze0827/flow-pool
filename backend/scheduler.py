@@ -8,6 +8,7 @@ from .models import account_guarded
 from .sub2api import Sub2API, UpstreamError, image_only_account, public_account
 from .batch_health import authentication_failed, post_import_observing, observation_error, inspect_item
 from .analytics import Analytics
+from .postgres import postgres_read_scope
 from .importer import ReloginCancelled
 from . import updater
 
@@ -94,7 +95,7 @@ class Scheduler:
                 return
             self.running = True
             try:
-                async with Sub2API(settings) as client:
+                async with Sub2API(settings) as client, postgres_read_scope():
                     for account in self.store.accounts():
                         try:
                             await self.check(client, account, settings.rule)
@@ -109,7 +110,7 @@ class Scheduler:
 
     async def check(self, client, account, rule):
         account_id = account['id']
-        remote = await client.account(account_id)
+        remote = await Analytics(self.store, client).account_snapshot(account_id)
         # 远端状态刷新不等于首字延迟巡检。只有下面真正进入样本采集时，
         # 才更新 last_checked，避免关闭守护或手动停调的账号显示“仍在巡检”。
         self.store.update(account_id, remote=public_account(remote), name=remote['name'], error=None)

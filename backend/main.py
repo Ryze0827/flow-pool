@@ -576,10 +576,9 @@ async def import_check(batch_id: str):
     if not original:
         raise HTTPException(404, '导入批次不存在')
     connection = store.settings()
-    # 获取完整最新列表，管理员鉴权 / 网络失败时整轮失败，不能误判为账号 401。
-    async with Sub2API(connection) as client:
-        remotes = {account['id']: account for account in await client.accounts()}
-        remote_now = client.now()
+    # 只读取本批次账号；PG / 鉴权失败时整轮失败，不能误判为账号失效。
+    remotes, remote_now = await Analytics(store).account_health(
+        [item['account_id'] for item in original['items'] if item.get('account_id')])
     async with scheduler.lock:
         current = store.settings()
         if current.base_url != connection.base_url or current.admin_key != connection.admin_key:
