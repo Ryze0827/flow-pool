@@ -8,6 +8,7 @@ from datetime import datetime
 from pydantic import ValidationError
 
 from .models import account_guarded, ImportOptions, ReloginImport
+from .model_catalog import OPENAI_MODELS
 from .sub2api import UpstreamError, public_account
 
 POOL_NAMES = {'priority': '高权重组', 'risk': '风控组', 'third_party': '三方账号组'}
@@ -276,6 +277,20 @@ class Importer:
                 self.store.save_batch(batch)
                 remote = await client.account(item['account_id'])
                 self.ensure_pool_available(remote['id'], options.pool)
+                # 先同步账号实时模型，再读取凭据，保留同步接口写入的模型元数据。
+                upstream_models = await client.sync_upstream_models(remote['id'])
+                remote = await client.account(remote['id'])
+                models = list(dict.fromkeys([*OPENAI_MODELS, *upstream_models, *options.model_whitelist]))
+                if len(models) > 200:
+                    raise UpstreamError('内置模型与上游模型合计超过 200 项，无法写入白名单', 400)
+                mapping = {model: model for model in models}
+                mapping.update((remote.get('credentials') or {}).get('model_mapping') or {})
+                mapping.update({entry.source: entry.target for entry in options.model_mappings})
+                credentials = {**(remote.get('credentials') or {}), 'model_mapping': mapping}
+                await client.request('PUT', f"accounts/{remote['id']}", json={'credentials': credentials})
+                remote = await client.account(remote['id'])
+                if (remote.get('credentials') or {}).get('model_mapping') != mapping:
+                    raise UpstreamError('账号模型白名单写入尚未确认，请重试推送')
                 if item.get('relogin') and remote.get('status') == 'error':
                     # 新凭据已成功写入后再清除旧错误及上游令牌缓存，支持 401 账号恢复。
                     await client.request('POST', f"accounts/{remote['id']}/clear-error")

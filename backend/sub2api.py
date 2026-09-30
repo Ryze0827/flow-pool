@@ -28,6 +28,11 @@ def public_account(account):
             'rate_limit_reset_at', 'overload_until', 'temp_unschedulable_until')
     result = {key: account.get(key) for key in keys}
     result['groups'] = [{'id': group['id'], 'name': group['name']} for group in account.get('groups', []) or []]
+    # 只保留额度快照字段，避免透传 extra 中无关或敏感配置。
+    extra = account.get('extra') if isinstance(account.get('extra'), dict) else {}
+    quota_keys = ('codex_5h_used_percent', 'codex_5h_reset_at', 'codex_5h_reset_after_seconds',
+                  'codex_7d_used_percent', 'codex_7d_reset_at', 'codex_7d_reset_after_seconds', 'codex_usage_updated_at')
+    result['extra'] = {key: extra[key] for key in quota_keys if key in extra and isinstance(extra[key], (str, int, float)) and not isinstance(extra[key], bool)}
     result['image_only'] = image_only_account(account)
     return result
 
@@ -126,6 +131,18 @@ class Sub2API:
         groups = await self.all('groups', platform='openai')
         proxies = await self.request('GET', 'proxies/all')
         return {'groups': [{'id': g['id'], 'name': g['name'], 'status': g['status']} for g in groups if g.get('platform') == 'openai' and g.get('status') == 'active'], 'proxies': [{'id': p['id'], 'name': p['name']} for p in proxies]}
+
+    async def sync_upstream_models(self, account_id):
+        """Read the live model list exposed by the account's upstream."""
+        result = await self.request('POST', f'accounts/{account_id}/models/sync-upstream')
+        models = result.get('models') if isinstance(result, dict) else None
+        if not isinstance(models, list):
+            raise UpstreamError('上游模型列表返回格式无效')
+        if not models or any(not isinstance(model, str) or not model.strip() or len(model.strip()) > 200
+                             or '*' in model or any(char.isspace() or ord(char) < 32 for char in model.strip())
+                             for model in models):
+            raise UpstreamError('上游模型列表为空或包含无效模型名称')
+        return list(dict.fromkeys(model.strip() for model in models))
 
     async def cooldown_groups(self, image_only=False):
         groups = [group for group in await self.all('groups', platform='openai')

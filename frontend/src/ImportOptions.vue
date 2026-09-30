@@ -58,7 +58,7 @@ function applyPresetMappings() {
         <input v-model.trim="model.model_whitelist[index]" :aria-label="`第 ${index + 1} 个白名单模型`" placeholder="完整模型名称，如 gpt-6-sol" maxlength="200" :disabled="busy || syncingModels" required />
         <button class="icon-button" type="button" :disabled="busy || syncingModels" :aria-label="`删除第 ${index + 1} 个白名单模型`" title="删除模型" @click="model.model_whitelist.splice(index, 1)"><X :size="14" /></button>
       </div>
-      <small>默认填入 Sub2API 内置的全部 OpenAI 模型，可修改或删除；同步时补齐清单并保留自定义模型。填写完整模型名称，不支持通配符。白名单与下方映射共同限定本批账号可接收的模型；同名冲突以映射为准。JSON / 账密上号共用，保存后用于新批次。</small>
+      <small>默认填入内置 OpenAI 模型，按钮补齐内置清单并保留自定义模型。确认推送时自动合并内置清单、该账号上游实时支持模型及自定义项；同步失败会提示重试。填写完整模型名称，不支持通配符。白名单与下方映射共同限定本批账号可接收的模型；同名冲突以映射为准。JSON / 账密上号共用，保存后用于新批次。</small>
     </div>
     <div class="span-2 model-mappings">
       <button class="text-button" type="button" :disabled="busy" @click="applyPresetMappings">应用预置映射</button>
