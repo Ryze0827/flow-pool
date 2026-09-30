@@ -22,7 +22,6 @@
 ```bash
 cat > .env <<'EOF'
 FLOWPOOL_SUB2API_URL=https://mgr.aiwxin.com
-FLOWPOOL_ALLOWED_HOSTS=localhost,127.0.0.1,[::1],testserver,flowpool.example.com
 EOF
 chmod 600 .env
 ```
@@ -31,7 +30,7 @@ chmod 600 .env
 
 `FLOWPOOL_SUB2API_URL` 是登录和管理操作的统一后端地址，示例与 erxinai 当前 `.env.local` 一致。部署同机时可改成该后端实际监听的回环地址；**不要填 erxinai 前端地址或另一套 Sub2API**。环境变量优先于本地已保存的连接地址；未设置时可沿用已保存的地址。页面不允许单独切换登录/管理后端。旧版 `FLOWPOOL_ADMIN_*` 不再生效，旧本地登录会话不再接受，无需迁移用户或密码。切换上游实例前应先处理本地托管账号及导入记录，避免混用 ID。
 
-通过 Nginx 域名访问时，将域名加入 `FLOWPOOL_ALLOWED_HOSTS`，正确传递 Host、`X-Forwarded-Proto`，对外使用 HTTPS。Uvicorn 只应信任实际反向代理的 IP（默认信任回环地址），应用按经可信代理处理后的请求协议设置 Secure Cookie，不直接信任任意客户端的转发头。启用 Turnstile 时需在同一站点配置中允许 FlowPool 域名。登录后在「连接设置 → Sub2API PostgreSQL」填写数据库主机、端口、库名、用户名、密码和 SSL 模式，并测试、保存。PG 配置加密保存在本地 SQLite，密码不回显；同一连接留空密码表示保留，也可明确勾选清除密码。改换连接目标或用户名时需重新填写密码。支持连接超时（1–30 秒）和查询超时（1–300 秒）。测试使用当前表单但不保存，核对主库、查询字段权限及与 HTTP 后端的管理员 Key 一致性。先保存上方管理员 Key，再测试 PG。
+默认允许通过 `fp.aiwxin.com` 访问；使用其他 Nginx 域名时，将域名加入 `FLOWPOOL_ALLOWED_HOSTS`，正确传递 Host、`X-Forwarded-Proto`，对外使用 HTTPS。Uvicorn 只应信任实际反向代理的 IP（默认信任回环地址），应用按经可信代理处理后的请求协议设置 Secure Cookie，不直接信任任意客户端的转发头。启用 Turnstile 时需在同一站点配置中允许 FlowPool 域名。登录后在「连接设置 → Sub2API PostgreSQL」填写数据库主机、端口、库名、用户名、密码和 SSL 模式，并测试、保存。PG 配置加密保存在本地 SQLite，密码不回显；同一连接留空密码表示保留，也可明确勾选清除密码。改换连接目标或用户名时需重新填写密码。支持连接超时（1–30 秒）和查询超时（1–300 秒）。测试使用当前表单但不保存，核对主库、查询字段权限及与 HTTP 后端的管理员 Key 一致性。先保存上方管理员 Key，再测试 PG。
 
 旧的 `FLOWPOOL_SUB2API_PG_DSN` 仍可作为尚未在页面保存时的配置来源（密码特殊字符需 URL 编码）；**页面保存后优先使用本地配置**，无需重启，不再受该环境变量覆盖。未保存时继续使用原 DSN 的全部 libpq 参数；页面配置使用展示的连接字段，证书验证依赖服务器上的 libpq 证书配置。共用只读连接模块位于 `backend/postgres.py`，指标查询集中在 `backend/analytics.py`。清空页面数据库用户名并保存，会停用 PG、清除保存的密码，覆盖旧环境变量并恢复 API 查询。已配置 PG 但连接失败、超时、指向副本或后端 Key 不匹配时直接报错，不静默回退、不将故障视为零数据。跨主机连接建议使用 `verify-full` 和受信任证书；本机可使用 Unix socket 或回环地址。
 
@@ -63,7 +62,11 @@ chmod 600 .env
 
 开票开关统一由 FlowPool「发票管理」控制。erxinai 通过带用户鉴权的 `/api/invoice-user/settings` 读取 `enabled`，不依赖 Sub2API 的支付开关；关闭后 FlowPool 也拒绝新的报价和申请，已有申请记录仍可查看。
 
-erxinai 的 `VITE_FLOWPOOL_BASE_URL` 配置当前工程的访问基础 URL（不含 `/api/invoice-user`，修改后重新启动开发服务或构建）。本地配置为 `http://127.0.0.1:8765`，生产配置为实际 HTTPS 地址；FlowPool 的 `FLOWPOOL_INVOICE_ALLOWED_ORIGINS` 填入允许访问的 erxinai 页面来源（协议、域名和端口，多个来源用逗号分隔），只对发票用户接口开放跨域，不使用管理员 Cookie。生产 FlowPool 域名同时加入 `FLOWPOOL_ALLOWED_HOSTS`。
+erxinai 的 `VITE_FLOWPOOL_BASE_URL` 配置当前工程的访问基础 URL（不含 `/api/invoice-user`，修改后重新启动开发服务或构建）。本地配置为 `http://127.0.0.1:8765`，当前生产配置为 `https://fp.aiwxin.com`。Cloudflare 上修改该配置后需重新构建 erxinai。
+
+FlowPool 默认允许 `https://aiwxin.com` 跨域访问发票用户接口，并允许 Host `fp.aiwxin.com`，后台任务默认开启；这些默认值随一键升级生效，无需手动新增 `FLOWPOOL_INVOICE_ALLOWED_ORIGINS`、`FLOWPOOL_ALLOWED_HOSTS` 或 `FLOWPOOL_BACKGROUND_TASKS`。已有环境变量仍优先，升级不会覆盖 `.env`；若已设置其他域名或 `FLOWPOOL_BACKGROUND_TASKS=0`，需调整或删除原配置。
+
+自定义 erxinai 来源通过 `FLOWPOOL_INVOICE_ALLOWED_ORIGINS` 设置（协议、域名和端口，多个来源用逗号分隔，显式留空可禁用跨域），只对发票用户接口开放跨域，不使用管理员 Cookie；自定义 FlowPool 域名通过 `FLOWPOOL_ALLOWED_HOSTS` 设置。
 
 若 `VITE_FLOWPOOL_BASE_URL` 留空，则沿用同源代理：开发环境使用 `VITE_DEV_INVOICE_PROXY_TARGET`（默认 `http://127.0.0.1:8765`），生产使用下方 Nginx 配置。其余 `/api/v1/*` 始终访问原 Sub2API。
 

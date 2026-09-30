@@ -97,9 +97,9 @@ async def lifespan(app):
 
 app = FastAPI(title='GPT 账号调控', lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(invoice_router(lambda: invoices))
-allowed_hosts = [item.strip() for item in os.environ.get('FLOWPOOL_ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1],testserver').split(',') if item.strip()]
+allowed_hosts = [item.strip() for item in os.environ.get('FLOWPOOL_ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1],testserver,fp.aiwxin.com').split(',') if item.strip()]
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
-invoice_allowed_origins = [item.strip().rstrip('/') for item in os.environ.get('FLOWPOOL_INVOICE_ALLOWED_ORIGINS', '').split(',') if item.strip() and item.strip() != '*']
+invoice_allowed_origins = [item.strip().rstrip('/') for item in os.environ.get('FLOWPOOL_INVOICE_ALLOWED_ORIGINS', 'https://aiwxin.com').split(',') if item.strip() and item.strip() != '*']
 
 
 @app.middleware('http')
