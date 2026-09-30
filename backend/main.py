@@ -268,6 +268,11 @@ async def upgrade_status():
     return await asyncio.to_thread(updater.status, ROOT, DATA)
 
 
+@app.post('/api/upgrade/check')
+async def upgrade_check():
+    return await asyncio.to_thread(updater.check, ROOT, DATA)
+
+
 @app.post('/api/upgrade', status_code=202)
 async def upgrade_start():
     if account_login.lock.locked() or (scheduler.relogin_task and not scheduler.relogin_task.done()):

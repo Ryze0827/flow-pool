@@ -36,11 +36,12 @@ def locked(data):
 
 
 def repo_info(root, data):
-    info = {'branch': '', 'upstream': '', 'commit': '', 'ready': False, 'reason': ''}
+    info = {'branch': '', 'upstream': '', 'commit': '', 'commit_at': '', 'latest_commit': '', 'latest_commit_at': '', 'update_available': False, 'ready': False, 'reason': ''}
     try:
         if data.resolve() != (root / 'data').resolve():
             raise UpgradeError('自定义数据目录暂不支持页面升级，请使用项目 data 目录部署')
         info['commit'] = git(root, 'rev-parse', '--verify', 'HEAD')
+        info['commit_at'] = git(root, 'show', '-s', '--format=%cI', 'HEAD')
         info['branch'] = git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD')
         if git(root, 'status', '--porcelain', '--untracked-files=normal'):
             raise UpgradeError('存在未提交文件，请先提交并推送，或自行处理本地改动')
@@ -59,6 +60,27 @@ def repo_info(root, data):
     except (OSError, ValueError):
         info['reason'] = '请先通过当前仓库的 start.sh / restart.sh 启动服务'
     return info
+
+
+def check(root, data):
+    """Fetch the tracked remote ref once and compare it with the local HEAD."""
+    if locked(data):
+        return status(root, data)
+    current = status(root, data)
+    info = repo_info(root, data)
+    if not info['ready']:
+        return {**current, 'repo': info, 'running': False}
+    branch = info['branch']
+    ref = git(root, 'config', f'branch.{branch}.merge')
+    try:
+        subprocess.run(['git', 'fetch', '--no-tags', 'origin', ref], cwd=root,
+                       capture_output=True, text=True, timeout=180, check=True)
+        info['latest_commit'] = git(root, 'rev-parse', 'FETCH_HEAD')
+        info['latest_commit_at'] = git(root, 'show', '-s', '--format=%cI', info['latest_commit'])
+        info['update_available'] = info['latest_commit'] != info['commit']
+    except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError, UpgradeError):
+        info['reason'] = '无法检查远程更新，请检查部署机网络、origin 地址及 Git 访问权限'
+    return {**current, 'repo': info, 'running': False}
 
 
 def status(root, data):
