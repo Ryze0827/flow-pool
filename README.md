@@ -261,7 +261,7 @@ npm run dev
 
 ### 本地额度展示与前端调试
 
-账号列表读取 Sub2API 账号已有的 `codex_5h_*`、`codex_7d_*` 和 `codex_usage_updated_at` 快照，展示已用比例、重置倒计时及更新时间。不请求用量探测接口；缺失数据展示暂无额度数据，窗口到期标注等待更新，不推断剩余额度。
+账号列表读取 Sub2API 账号已有的 `codex_5h_*`、`codex_7d_*` 和 `codex_usage_updated_at` 快照，展示剩余额度比例、重置倒计时及更新时间；剩余比例为 100 减已用比例，缺少快照时按满额展示。只有 Plus 账号展示 5 小时窗口，Pro / Team 隐藏 5 小时窗口。不请求用量探测接口。
 
 在 `frontend/.env.local` 设置 `FLOWPOOL_DEV_API_TARGET=https://fp.aiwxin.com` 后，于 `frontend` 执行 `npm run dev`，本地页面的 `/api` 请求将代理到指定 FlowPool 后台。未设置时默认使用本地 8765 端口。新额度字段需要目标后台包含对应版本才能显示。
 

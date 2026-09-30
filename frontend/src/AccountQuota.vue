@@ -8,15 +8,16 @@ const stamp = value => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 const updated = computed(() => stamp(props.account.remote.extra?.codex_usage_updated_at))
-const windows = computed(() => ['5h', '7d'].map(window => {
+const planType = computed(() => String(props.account.remote.plan_type || '').trim().toLowerCase())
+const windows = computed(() => ['5h', '7d'].filter(window => window !== '5h' || planType.value === 'plus').map(window => {
   const extra = props.account.remote.extra || {}
   const raw = extra[`codex_${window}_used_percent`]
   const used = raw == null || raw === '' ? NaN : Number(raw)
   const seconds = Number(extra[`codex_${window}_reset_after_seconds`])
   const reset = stamp(extra[`codex_${window}_reset_at`]) || (updated.value && Number.isFinite(seconds) && seconds > 0 ? updated.value + seconds : null)
-  return { label: window === '5h' ? '5 小时' : '7 天', used: Number.isFinite(used) && used >= 0 ? used : null, reset }
+  const usedPercent = Number.isFinite(used) && used >= 0 ? Math.min(used, 100) : 0
+  return { label: window === '5h' ? '5 小时' : '7 天', used: usedPercent, hasSnapshot: Number.isFinite(used) && used >= 0, remaining: 100 - usedPercent, reset }
 }))
-const hasData = computed(() => windows.value.some(window => window.used !== null))
 const dateText = value => new Date(value * 1000).toLocaleString('zh-CN', { hour12: false })
 function resetText(reset) {
   if (!reset) return '重置时间未知'
@@ -29,13 +30,13 @@ function resetText(reset) {
 
 <template>
   <div class="quota-cell">
-    <template v-if="hasData">
+    <template v-if="windows.length">
       <div v-for="window in windows" :key="window.label" class="quota-window">
-        <span>{{ window.label }} · {{ window.used === null ? '暂无数据' : `已用 ${Number(window.used.toFixed(1))}%` }}</span>
-        <div v-if="window.used !== null" class="quota-track" role="meter" :aria-label="`${window.label}额度已用比例`" :aria-valuenow="Math.min(window.used, 100)" aria-valuemin="0" aria-valuemax="100">
-          <span :style="{ width: `${Math.min(window.used, 100)}%` }" :class="{ high: window.used >= 90 && window.used < 100, exhausted: window.used >= 100 }"></span>
+        <span>{{ window.label }} · 剩余 {{ Number(window.remaining.toFixed(1)) }}%<small v-if="!window.hasSnapshot" class="quota-default">默认满额</small></span>
+        <div class="quota-track" role="meter" :aria-label="`${window.label}剩余额度`" :aria-valuenow="window.remaining" aria-valuemin="0" aria-valuemax="100">
+          <span :style="{ width: `${window.remaining}%` }" :class="{ low: window.remaining <= 10, exhausted: window.remaining <= 0 }"></span>
         </div>
-        <small v-if="window.used !== null" :title="window.reset ? dateText(window.reset) : ''">{{ resetText(window.reset) }}</small>
+        <small :title="window.reset ? dateText(window.reset) : ''">{{ resetText(window.reset) }}</small>
       </div>
       <small :title="updated ? dateText(updated) : ''">{{ updated ? `快照 ${dateText(updated)}` : '快照时间未知' }}</small>
     </template>
@@ -49,6 +50,7 @@ function resetText(reset) {
 .quota-cell small { display: block; color: var(--text-muted, #718096); font-size: 11px; margin-top: 3px; }
 .quota-track { height: 4px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .quota-track span { display: block; height: 100%; background: #14b8a6; }
-.quota-track span.high { background: #f59e0b; }
+.quota-track span.low { background: #f59e0b; }
 .quota-track span.exhausted { background: #ef4444; }
+.quota-default { display: inline !important; margin-left: 4px; }
 </style>

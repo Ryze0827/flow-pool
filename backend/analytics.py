@@ -110,6 +110,7 @@ class Analytics:
         async with self.snapshot() as cursor:
             await cursor.execute('''SELECT EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) AS database_now,
                     a.id, a.name, a.platform, a.type, a.status, a.schedulable,
+                    COALESCE(NULLIF(a.credentials->>'plan_type', ''), NULLIF(a.credentials->>'chatgpt_plan_type', '')) AS plan_type,
                     a.priority, a.concurrency, a.created_at, a.expires_at, a.auto_pause_on_expired,
                     a.rate_limit_reset_at, a.overload_until, a.temp_unschedulable_until, a.error_message,
                     COALESCE((SELECT jsonb_agg(jsonb_build_object('id', g.id, 'name', g.name) ORDER BY g.id)
