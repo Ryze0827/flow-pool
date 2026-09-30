@@ -13,7 +13,7 @@ const error = ref('')
 const detail = ref(null)
 const refreshIntervalSeconds = 10
 const statuses = { pending: '待发送', sending: '发送中', sent: '已提交 SMTP', failed: '发送失败', skipped: '已取消' }
-const kinds = { warning: '告警', cooldown: '冷却', recovery: '冷却恢复', rpm: 'RPM 增长', test: '测试' }
+const kinds = { warning: '告警', cooldown: '冷却', recovery: '冷却恢复', rpm: 'RPM 增长', test: '测试', invoice: '电子发票' }
 const timeText = value => value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '—'
 let polling
 

@@ -2,8 +2,8 @@ export async function api(path, method = 'GET', body, options = {}) {
   const response = await fetch(`/api${path}`, {
     method,
     signal: options.signal,
-    headers: { 'Content-Type': 'application/json', 'X-Scheduler-Request': '1' },
-    body: body === undefined ? undefined : JSON.stringify(body)
+    headers: { 'Content-Type': options.rawBody ? 'application/pdf' : 'application/json', 'X-Scheduler-Request': '1' },
+    body: body === undefined ? undefined : options.rawBody ? body : JSON.stringify(body)
   })
   const data = await response.json().catch(() => null)
   if (!response.ok) {

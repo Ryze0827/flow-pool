@@ -8,11 +8,13 @@ import LoginImport from './LoginImport.vue'
 import ReloginAccount from './ReloginAccount.vue'
 import ImportHistory from './ImportHistory.vue'
 import MailNotifications from './MailNotifications.vue'
+import InvoiceManagement from './InvoiceManagement.vue'
 import SystemUpgrade from './SystemUpgrade.vue'
 import AdminLogin from './AdminLogin.vue'
 import RateInspection from './RateInspection.vue'
 import PostgresSettings from './PostgresSettings.vue'
 import PerformanceMetrics from './PerformanceMetrics.vue'
+import RankingSidebar from './RankingSidebar.vue'
 
 const clone = value => JSON.parse(JSON.stringify(value))
 const nav = [
@@ -23,10 +25,11 @@ const nav = [
   { id: 'rates', name: '用户倍率巡检', icon: Gauge },
   { id: 'rules', name: '调度规则', icon: SlidersHorizontal },
   { id: 'events', name: '操作日志', icon: Activity },
-  { id: 'mail', name: '邮件通知', icon: Mail }
+  { id: 'mail', name: '邮件通知', icon: Mail },
+  { id: 'invoices', name: '发票管理', icon: FileJson }
 ]
 const pools = [{ id: 'priority', name: '高权重组', desc: '核心账号，稳定交付', icon: Zap, color: 'purple' }, { id: 'risk', name: '风控组', desc: '独立归档，持续观察', icon: ShieldCheck, color: 'teal' }, { id: 'third_party', name: '三方账号组', desc: '外部资源，统一管理', icon: Layers3, color: 'blue' }]
-const routePaths = { overview: '/overview', accounts: '/accounts', usage: '/usage', import: '/import', rates: '/rate-inspection', rules: '/rules', events: '/events', mail: '/mail', settings: '/settings' }
+const routePaths = { overview: '/overview', accounts: '/accounts', usage: '/usage', import: '/import', rates: '/rate-inspection', rules: '/rules', events: '/events', mail: '/mail', invoices: '/invoices', settings: '/settings' }
 const pageFromPath = path => Object.entries(routePaths).find(([, route]) => route === path)?.[0] || 'overview'
 const page = ref(pageFromPath(globalThis.location?.pathname || '/'))
 const auth = ref({ ready: false, configured: false, authenticated: false, username: '' })
@@ -40,14 +43,13 @@ const usagePoolRecords = ref({ priority: [], risk: [], third_party: [] })
 const usageTotal = ref(0)
 const usageActiveCounts = computed(() => Object.fromEntries(pools.map(pool => [pool.id, data.value.accounts.filter(account => account.pool === pool.id && ['active', 'probation'].includes(account.state) && account.remote?.schedulable === true && !availabilityIssue(account)).length])))
 const usageLoading = ref(false)
-const rankingOpen = ref(true)
 const ranking = ref([])
 // 占比每 30 秒更新，状态始终取账号列表的最新快照，避免把本地 active 当成上游可用。
 const rankingAccounts = computed(() => {
   const accounts = new Map(data.value.accounts.map(account => [account.id, account]))
   return ranking.value.flatMap(item => {
     const account = accounts.get(item.account_id)
-    return account ? [{ ...item, account }] : []
+    return account ? [{ ...item, account, poolName: poolName(account.pool), scheduleLabel: scheduleLabel(account) }] : []
   })
 })
 const rankingSampleSize = ref(0)
@@ -187,7 +189,7 @@ const scheduleLabel = account => {
   return availabilityIssue(account) || (account.error ? account.state === 'pausing' ? '暂缓停调' : '状态异常' : guardWarning(account) ? '告警 · 继续调度' : statuses[account.state])
 }
 const ratio = a => a.sample.length ? Math.round(a.slow_count / a.sample.length * 100) : 0
-const title = computed(() => ({ overview: '调度总览', accounts: '账号号池', usage: '账号调用记录', import: '快速上号', rates: '用户倍率巡检', rules: '调度规则', events: '操作日志', mail: '邮件通知', settings: '连接设置' }[page.value]))
+const title = computed(() => ({ overview: '调度总览', accounts: '账号号池', usage: '账号调用记录', import: '快速上号', rates: '用户倍率巡检', rules: '调度规则', events: '操作日志', mail: '邮件通知', invoices: '发票管理', settings: '连接设置' }[page.value]))
 
 function handleAuthExpired() {
   auth.value = { ...auth.value, authenticated: false }
@@ -543,6 +545,7 @@ onUnmounted(() => {
 
           <RateInspection v-if="page === 'rates'" @notify="notify"/>
           <MailNotifications v-if="page === 'mail'" @notify="notify"/>
+          <InvoiceManagement v-if="page === 'invoices'" @notify="notify"/>
           <section v-if="page === 'events'" class="panel"><div class="panel-heading"><h2>调度与操作记录</h2><button class="button" @click="refresh"><RefreshCw :size="15"/>刷新 · 每 {{ refreshIntervalSeconds }} 秒</button></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>级别</th><th>账号</th><th>操作</th><th>详情</th></tr></thead><tbody><tr v-for="event in data.events" :key="event.id"><td class="muted small">{{ timeText(event.created_at) }}</td><td><span :class="['badge', event.level === 'info' ? 'success' : 'warning']">{{ { info: '信息', warning: '提醒', error: '异常' }[event.level] }}</span></td><td>{{ event.account_id ? '#' + event.account_id : '系统' }}</td><td>{{ { settings: '更新设置', guard: '风控设置', rpm_alert: 'RPM 增长告警', rate_correction: '用户倍率纠正', rate_rules: '充值档位规则', postgres_settings: '数据库连接设置', mail_settings: '邮件配置', mail_error: '邮件异常', auto_relogin: '自动重登', auto_relogin_error: '自动重登失败', image_cooldown: '冷却 · 仅生图调度', pause: '暂停调度', resume: '恢复调度', healthy: '观察通过', replacement: '启用替补调度', enroll: '录入号池', remove: '移出号池', import: '推送账号', import_observation: '入池观察', upstream_error: '接口异常', worker_error: '调度异常' }[event.action] || event.action }}</td><td>{{ event.message }}</td></tr></tbody></table></div><div v-if="!data.events.length" class="empty-state"><Activity :size="28"/><h3>还没有操作日志</h3><p>连接、上号与调度决策会在这里留下记录。</p></div></section>
           <section v-if="page === 'usage'" class="panel usage-panel">
             <div class="panel-heading usage-heading">
@@ -559,10 +562,7 @@ onUnmounted(() => {
         <footer class="page-footer"><span><Database :size="13"/>数据保存在本机 · SQLite</span><span>自动调度，让账号各得其时。</span></footer>
       </div>
     </main>
-    <aside v-if="settings && !['rates', 'settings'].includes(page)" class="ranking-sidebar" aria-label="调用占比排名">
-      <button v-if="!rankingOpen && page !== 'rates'" class="button ranking-toggle" type="button" aria-controls="usage-ranking-sidebar" aria-expanded="false" @click="rankingOpen = true"><ListFilter :size="16"/>调用占比排名</button>
-      <section v-if="rankingOpen && page !== 'rates'" id="usage-ranking-sidebar" class="panel ranking-panel"><div class="panel-heading"><div><h2>调用占比排名</h2><p>最新 {{ rankingSampleSize }} 条调用 · {{ rankingRefreshText }}</p></div><button class="icon-button" type="button" aria-label="收起调用占比排名" @click="rankingOpen = false"><X :size="16"/></button></div><div class="ranking-list"><div v-for="(item, index) in rankingAccounts" :key="item.account_id" class="ranking-row"><span class="ranking-index">{{ index + 1 }}</span><div class="ranking-account"><strong>{{ item.account.name }}</strong><small>#{{ item.account_id }} · {{ poolName(item.account.pool) }} · {{ scheduleLabel(item.account) }}</small></div><strong class="ranking-share">{{ item.share.toFixed(1) }}%</strong></div><p v-if="!rankingAccounts.length" class="quiet-empty">暂无本地托管账号</p></div></section>
-    </aside>
+    <RankingSidebar v-if="settings && !['rates', 'settings'].includes(page)" :accounts="rankingAccounts" :sample-size="rankingSampleSize" :refresh-text="rankingRefreshText"/>
 
     <ReloginAccount v-if="page === 'import' && relogin" :batch="relogin.batch" :item="relogin.item" :source="relogin.source" @close="relogin = null" @loading="loginLoading = $event" @updated="reloginUpdated"/>
 

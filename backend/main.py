@@ -25,6 +25,8 @@ from .scheduler import expiry_timestamp
 from . import updater
 from .auth import SESSION_TTL_SECONDS
 from .upstream_auth import UpstreamAuth
+from .invoices import Invoices, invoice_router
+from .invoice_cors import InvoiceCORSMiddleware
 from .rate_inspection import RateInspection, select_groups
 from .postgres import Sub2Postgres, resolve_postgres_settings
 from .analytics import Analytics
@@ -38,6 +40,7 @@ scheduler = None
 importer = None
 account_login = None
 mailer = None
+invoices = None
 upstream_auth = None
 rate_inspection = None
 performance = None
@@ -46,7 +49,7 @@ POOL_NAMES = {'priority': '高权重组', 'risk': '风控组', 'third_party': '�
 
 @asynccontextmanager
 async def lifespan(app):
-    global store, scheduler, importer, account_login, mailer, upstream_auth, rate_inspection, performance
+    global store, scheduler, importer, account_login, mailer, invoices, upstream_auth, rate_inspection, performance
     DATA.mkdir(parents=True, exist_ok=True)
     lock_file = (DATA / 'worker.lock').open('w')
     try:
@@ -57,6 +60,7 @@ async def lifespan(app):
     upstream_auth = UpstreamAuth(store)
     rate_inspection = RateInspection(store)
     mailer = Mailer(store)
+    invoices = Invoices(store, mailer)
     performance = PerformanceMonitor(store, mailer)
     scheduler = Scheduler(store, mailer)
     importer = Importer(store, scheduler)
@@ -64,6 +68,8 @@ async def lifespan(app):
     scheduler.relogin_handler = lambda account, recovery: importer.auto_relogin(account, recovery, account_login)
     scheduler.relogin_busy = lambda: account_login.lock.locked()
     async def after_deploy(worker):
+        if os.environ.get('FLOWPOOL_BACKGROUND_TASKS', '1') == '0':
+            return
         # 升级健康检查通过前不发送邮件、不改变远端账号，便于安全恢复数据库。
         while (DATA / 'upgrade-deploying').exists():
             await asyncio.sleep(1)
@@ -90,8 +96,10 @@ async def lifespan(app):
 
 
 app = FastAPI(title='GPT 账号调控', lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app.include_router(invoice_router(lambda: invoices))
 allowed_hosts = [item.strip() for item in os.environ.get('FLOWPOOL_ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1],testserver').split(',') if item.strip()]
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+invoice_allowed_origins = [item.strip().rstrip('/') for item in os.environ.get('FLOWPOOL_INVOICE_ALLOWED_ORIGINS', '').split(',') if item.strip() and item.strip() != '*']
 
 
 @app.middleware('http')
@@ -108,7 +116,17 @@ async def local_security(request: Request, call_next):
         return secured(JSONResponse({'detail': message}, status_code=status))
 
     public_api = {'/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/login/2fa', '/api/auth/public-settings', '/api/auth/logout'}
-    if request.url.path.startswith('/api/') and request.url.path not in public_api:
+    invoice_user_api = request.url.path.startswith('/api/invoice-user/')
+    if invoice_user_api:
+        if not request.headers.get('authorization', '').lower().startswith('bearer '):
+            return reject('请先登录', 401)
+        try:
+            if not invoices:
+                return reject('服务尚未就绪', 503)
+            await invoices.authenticate(request)
+        except HTTPException as error:
+            return reject(error.detail, error.status_code)
+    elif request.url.path.startswith('/api/') and request.url.path not in public_api:
         try:
             user = await upstream_auth.session(request.cookies.get('flowpool_session')) if upstream_auth else None
         except HTTPException as error:
@@ -118,7 +136,8 @@ async def local_security(request: Request, call_next):
         request.state.admin = user
     if request.url.path.startswith('/api/') and request.method != 'GET':
         origin = request.headers.get('origin')
-        if request.headers.get('x-scheduler-request') != '1' or (origin and urlsplit(origin).netloc != request.headers.get('host')):
+        allowed_invoice_origin = invoice_user_api and origin in invoice_allowed_origins
+        if (not invoice_user_api and request.headers.get('x-scheduler-request') != '1') or (origin and urlsplit(origin).netloc != request.headers.get('host') and not allowed_invoice_origin):
             return reject('仅接受同源页面操作', 403)
         if request.url.path != '/api/upgrade' and (updater.locked(DATA) or (DATA / 'upgrade-deploying').exists()):
             return reject('系统升级中，请等待完成后再操作', 409)
@@ -128,18 +147,22 @@ async def local_security(request: Request, call_next):
                 raise ValueError()
         except ValueError:
             return reject('请求长度无效', 400)
-        maximum = 8 * 1024 * 1024
+        maximum = (5 if request.url.path.startswith('/api/invoices/') and request.url.path.endswith('/file') else 8) * 1024 * 1024
         if length > maximum:
-            return reject('JSON 文件不能超过 8 MB', 413)
+            return reject(f'请求内容不能超过 {maximum // 1024 // 1024} MB', 413)
         chunks, size = [], 0
         async for chunk in request.stream():
             size += len(chunk)
             if size > maximum:
-                return reject('JSON 文件不能超过 8 MB', 413)
+                return reject(f'请求内容不能超过 {maximum // 1024 // 1024} MB', 413)
             chunks.append(chunk)
         # Starlette's cached request replays this bounded body to call_next.
         request._body = b''.join(chunks)
     return secured(await call_next(request))
+
+
+app.add_middleware(InvoiceCORSMiddleware, allow_origins=invoice_allowed_origins,
+                   allow_methods=['GET', 'POST'], allow_headers=['Authorization', 'Content-Type'])
 
 
 @app.exception_handler(UpstreamError)

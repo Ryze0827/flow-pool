@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
+from pathlib import Path
 
 from .models import account_guarded
 
@@ -30,7 +31,7 @@ def validate_mail(settings, recipients=True):
 
 
 def smtp_send(settings, payload=None):
-    validate_mail(settings, recipients=payload is not None)
+    validate_mail(settings, recipients=payload is not None and not payload.get('attachment'))
     client = None
     try:
         # macOS 的 Python 可能没有配置系统 CA 路径；使用虚拟环境的
@@ -54,6 +55,8 @@ def smtp_send(settings, payload=None):
             message['Date'] = formatdate(localtime=True)
             message['Message-ID'] = payload['message_id']
             message.set_content(payload['body'])
+            if payload.get('attachment'):
+                message.add_attachment(Path(payload['attachment']).read_bytes(), maintype='application', subtype='pdf', filename=payload['filename'])
             refused = client.send_message(message, from_addr=settings.smtp_from_email, to_addrs=payload['recipients'])
             if refused:
                 raise MailError(f'部分收件人被拒收（{len(refused)} 个），其余已提交；重发可能产生重复邮件')
@@ -161,7 +164,7 @@ class Mailer:
                 self.store.update_mail(row['id'], 'failed', '测试发送被中断，请重新发送测试邮件')
                 return
             settings = self.store.mail_settings()
-            if not settings.enabled or not getattr(settings, 'notify_' + row['kind']):
+            if row['kind'] != 'invoice' and (not settings.enabled or not getattr(settings, 'notify_' + row['kind'])):
                 self.store.update_mail(row['id'], 'skipped', '对应邮件通知已关闭')
                 return
             await self.deliver(row['id'], settings, self.store.unseal(row['payload']))
@@ -169,7 +172,7 @@ class Mailer:
     async def deliver(self, message_id, settings, payload):
         self.store.update_mail(message_id, 'sending')
         try:
-            validate_mail(settings)
+            validate_mail(settings, recipients=not payload.get('attachment'))
             await asyncio.to_thread(smtp_send, settings, payload)
         except Exception as error:
             detail = str(error) if isinstance(error, MailError) else '邮件发送异常，请检查 SMTP 配置'

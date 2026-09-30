@@ -53,6 +53,36 @@ chmod 600 .env
 
 ## 使用流程
 
+### 自助发票
+
+管理端新增「发票管理」：配置金额档位与手续费率，开启自助发票后接收 erxinai 用户申请。首档金额起点必须为 0，每档适用至下一档起点；按整笔申请的充值入账金额（USD）计费，四舍五入保留两位小数。首版支持企业抬头、税号、接收邮箱和最多 100 笔整单合并，不支持部分开票和实时支付。
+
+用户端提交前显示后端报价与余额，并刷新账户余额；FlowPool 接收申请时重新验证订单、报价和余额。管理员审核通过时复核订单和余额，再通过 Sub2API `POST /api/v1/admin/users/:id/balance` 的 `subtract` 原子扣费；驳回不扣费并释放关联订单。已退款、正在申请退款及已占用订单不可重复申请。报价有效期 15 分钟，规则或订单改变后需刷新报价。
+
+扣费成功后上传 PDF（最多 5 MB），系统保存到私有 `data/invoices/` 目录并将附件邮件加入队列。发票邮件复用「邮件通知」中的 SMTP 连接与发件配置，发送到申请填写的邮箱，不受告警通知开关或管理员收件人列表影响。邮件发送失败后在申请详情手动重发；「已提交 SMTP」不代表对方已经收到。扣费结果未确认时停止自动重试，管理员先按申请编号核对 Sub2API 余额流水，再在详情中确认已扣费或未扣费。
+
+开票开关统一由 FlowPool「发票管理」控制。erxinai 通过带用户鉴权的 `/api/invoice-user/settings` 读取 `enabled`，不依赖 Sub2API 的支付开关；关闭后 FlowPool 也拒绝新的报价和申请，已有申请记录仍可查看。
+
+erxinai 的 `VITE_FLOWPOOL_BASE_URL` 配置当前工程的访问基础 URL（不含 `/api/invoice-user`，修改后重新启动开发服务或构建）。本地配置为 `http://127.0.0.1:8765`，生产配置为实际 HTTPS 地址；FlowPool 的 `FLOWPOOL_INVOICE_ALLOWED_ORIGINS` 填入允许访问的 erxinai 页面来源（协议、域名和端口，多个来源用逗号分隔），只对发票用户接口开放跨域，不使用管理员 Cookie。生产 FlowPool 域名同时加入 `FLOWPOOL_ALLOWED_HOSTS`。
+
+若 `VITE_FLOWPOOL_BASE_URL` 留空，则沿用同源代理：开发环境使用 `VITE_DEV_INVOICE_PROXY_TARGET`（默认 `http://127.0.0.1:8765`），生产使用下方 Nginx 配置。其余 `/api/v1/*` 始终访问原 Sub2API。
+
+本地调试可继续连接环境上的 Sub2API：FlowPool `.env` 的 `FLOWPOOL_SUB2API_URL` 和 erxinai `.env.local` 的 `VITE_DEV_API_PROXY_TARGET` 使用相同环境地址；FlowPool 前端的 `FLOWPOOL_DEV_API_TARGET` 使用 `http://127.0.0.1:8765`。设置 `FLOWPOOL_BACKGROUND_TASKS=0` 可暂停本地实例的自动调度、邮件发送及性能采样任务，页面接口仍可使用；正常运行时删除此项或设置为 `1`，上传发票后邮件才会自动发送。
+
+使用同源代理的生产环境在 **erxinai 所在站点**增加以下配置，端口按实际配置替换：
+
+```nginx
+location ^~ /api/invoice-user/ {
+    proxy_pass http://127.0.0.1:8765;
+    proxy_set_header Host $host;
+    proxy_set_header Authorization $http_authorization;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+}
+```
+
+将 erxinai 的域名加入 FlowPool 的 `FLOWPOOL_ALLOWED_HOSTS`，并确保两端使用同一个 Sub2API 后端。用户接口通过用户 Bearer Token 校验身份，管理接口仍仅接受管理员会话。备份时一起保留 `scheduler.db`、`secret.key` 和 `invoices/`；远端已发生的扣费不随本地数据库回退，恢复旧备份后应先核对待审核申请的扣费流水。
+
 ### 总览性能指标与 RPM 告警
 
 总览「性能指标」直接读取 Sub2API `GET /api/v1/admin/dashboard/snapshot-v2` 的 `stats.rpm`，与其前端口径一致：**全站最近 5 分钟已落库调用数除以 5，取整数**，不限定 GPT 账号。后台每 30 秒独立采样，单轮最多 25 秒；关闭页面或停用账号调度后仍继续监控。前端自动或手动刷新均读取后台缓存。
