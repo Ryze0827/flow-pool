@@ -2,6 +2,7 @@
 import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { ArrowUpToLine, CheckCheck, LoaderCircle, RefreshCw, X } from 'lucide-vue-next'
 import { api } from './api'
+import { createUpgradePolling } from './upgradePolling'
 
 const props = defineProps({ busy: Boolean })
 const dialog = ref(null)
@@ -15,13 +16,19 @@ const active = computed(() => submitting.value || state.value.running)
 const labels = { success: '升级完成', unchanged: '已是最新', failed: '升级失败', rolled_back: '已回退', recovery_failed: '需要处理', interrupted: '任务中断', running: '升级中' }
 const jobLabel = computed(() => labels[state.value.job?.status] || '等待升级')
 let mounted = true, fetching = false
+let requestController
+const polling = createUpgradePolling(refresh, () => state.value.running)
 
 async function refresh() {
   if (fetching) return
+  polling.cancel()
   fetching = true
   loading.value = true
+  const controller = new AbortController()
+  requestController = controller
+  const timeout = setTimeout(() => controller.abort(), 10000)
   try {
-    const result = await api('/upgrade')
+    const result = await api('/upgrade', 'GET', undefined, { signal: controller.signal })
     if (!mounted) return
     state.value = result
     reconnecting.value = false
@@ -31,8 +38,11 @@ async function refresh() {
     if (state.value.running) reconnecting.value = true
     else error.value = failure.message || '无法读取升级状态'
   } finally {
+    clearTimeout(timeout)
+    requestController = null
     fetching = false
     if (mounted) loading.value = false
+    polling.schedule()
   }
 }
 async function open() {
@@ -46,12 +56,18 @@ async function start() {
   error.value = ''
   try {
     const job = await api('/upgrade', 'POST')
+    if (!mounted) return
     state.value = { ...state.value, running: true, job }
+    polling.schedule()
   } catch (failure) { error.value = failure.message }
   finally { submitting.value = false }
 }
 function reload() { globalThis.location.reload() }
-onUnmounted(() => { mounted = false })
+onUnmounted(() => {
+  mounted = false
+  polling.stop()
+  requestController?.abort()
+})
 </script>
 
 <template>
@@ -64,10 +80,10 @@ onUnmounted(() => { mounted = false })
       <p v-if="!state.repo.ready && !active" class="notice compact">{{ state.repo.reason || '正在检查部署环境…' }}</p>
       <div v-if="state.job" class="upgrade-progress" role="status" aria-live="polite">
         <div class="section-heading"><strong>{{ jobLabel }}</strong><span :class="['badge', ['success', 'unchanged'].includes(state.job.status) ? 'success' : active ? 'neutral' : 'warning']">{{ active ? '后台执行' : '已结束' }}</span></div>
-        <p>{{ reconnecting ? '暂时无法连接服务，可能正在重启，请稍后手动刷新状态。' : state.job.message }}</p>
+        <p>{{ reconnecting ? '暂时无法连接服务，可能正在重启，正在自动重连…' : state.job.message }}</p>
         <small v-if="state.job.new_commit">版本 {{ state.job.old_commit.slice(0, 8) }} → {{ state.job.new_commit.slice(0, 8) }}</small>
         <ol v-if="state.job.steps?.length" class="upgrade-steps"><li v-for="(step, index) in state.job.steps" :key="index"><span>{{ step.message }}</span><time>{{ timeText(step.time) }}</time></li></ol>
-        <small class="muted">最近更新：{{ timeText(state.job.updated_at) }} · 手动刷新状态</small>
+        <small class="muted">最近更新：{{ timeText(state.job.updated_at) }} · {{ active ? '每 2 秒自动刷新' : '升级任务已结束' }}</small>
       </div>
       <p v-if="error" class="notice error" role="alert">{{ error }}</p>
       <p v-if="active" class="small muted">关闭弹框不会中断升级；升级完成前暂停页面写入操作。</p>

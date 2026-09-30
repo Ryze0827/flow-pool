@@ -33,7 +33,7 @@ function resetText(reset) {
       <div v-for="window in windows" :key="window.label" class="quota-window">
         <span>{{ window.label }} · {{ window.used === null ? '暂无数据' : `已用 ${Number(window.used.toFixed(1))}%` }}</span>
         <div v-if="window.used !== null" class="quota-track" role="meter" :aria-label="`${window.label}额度已用比例`" :aria-valuenow="Math.min(window.used, 100)" aria-valuemin="0" aria-valuemax="100">
-          <span :style="{ width: `${Math.min(window.used, 100)}%` }" :class="{ high: window.used >= 90 }"></span>
+          <span :style="{ width: `${Math.min(window.used, 100)}%` }" :class="{ high: window.used >= 90 && window.used < 100, exhausted: window.used >= 100 }"></span>
         </div>
         <small v-if="window.used !== null" :title="window.reset ? dateText(window.reset) : ''">{{ resetText(window.reset) }}</small>
       </div>
@@ -50,4 +50,5 @@ function resetText(reset) {
 .quota-track { height: 4px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .quota-track span { display: block; height: 100%; background: #14b8a6; }
 .quota-track span.high { background: #f59e0b; }
+.quota-track span.exhausted { background: #ef4444; }
 </style>
