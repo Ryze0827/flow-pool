@@ -249,10 +249,21 @@ class Scheduler:
             self.store.update(account_id, breach_times=[], breach_sample='', last_breach_at=None, reason=message)
             self.record_inspection(account, state, samples, slow, '继续观察' if state == 'probation' else '保持调度', message, rule=rule)
             return
+        if state in {'active', 'probation'}:
+            # 清理旧版恢复观察逻辑留下的不足样本达限；正常阶段此前不会产生这种计次。
+            counted_samples = json.loads(account.get('breach_sample') or '[]')
+            if counted_samples and len(counted_samples) < rule.sample_size:
+                self.store.update(account_id, breach_times=[], breach_sample='', last_breach_at=None)
         if state == 'probation':
             if time.time() < max(account['probation_until'] or 0, account.get('post_import_until') or 0):
                 if sample_changed:
                     self.record_inspection(account, state, samples, slow, '继续观察', '恢复观察期内，暂不执行自动暂停', rule=rule)
+                return
+            if len(samples) < rule.sample_size:
+                message = f'恢复观察样本不足：{len(samples)}/{rule.sample_size} 条，等待新调用'
+                self.store.update(account_id, reason=message)
+                if sample_changed:
+                    self.record_inspection(account, state, samples, slow, '继续观察', message, rule=rule)
                 return
             if slow / len(samples) >= rule.slow_ratio:
                 await self.check_breaches(client, account, rule, samples, slow, f'恢复观察达限：{slow}/{len(samples)} 条首字延迟超限')
