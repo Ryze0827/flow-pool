@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, Pool, AdminLogin, AdminLogin2FA, RateInspectionRequest, RateCorrectionRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, Pool, AdminLogin, AdminLogin2FA, RateInspectionRequest, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -28,6 +28,7 @@ from .upstream_auth import UpstreamAuth
 from .invoices import Invoices, invoice_router
 from .invoice_cors import InvoiceCORSMiddleware
 from .rate_inspection import RateInspection, select_groups
+from .group_control import GroupControl
 from .postgres import Sub2Postgres, resolve_postgres_settings
 from .analytics import Analytics
 from .performance import PerformanceMonitor
@@ -43,13 +44,14 @@ mailer = None
 invoices = None
 upstream_auth = None
 rate_inspection = None
+group_control = None
 performance = None
 POOL_NAMES = {'priority': '高权重组', 'risk': '风控组', 'third_party': '三方账号组'}
 
 
 @asynccontextmanager
 async def lifespan(app):
-    global store, scheduler, importer, account_login, mailer, invoices, upstream_auth, rate_inspection, performance
+    global store, scheduler, importer, account_login, mailer, invoices, upstream_auth, rate_inspection, group_control, performance
     DATA.mkdir(parents=True, exist_ok=True)
     lock_file = (DATA / 'worker.lock').open('w')
     try:
@@ -59,6 +61,7 @@ async def lifespan(app):
     store = Store(DATA)
     upstream_auth = UpstreamAuth(store)
     rate_inspection = RateInspection(store)
+    group_control = GroupControl(store)
     mailer = Mailer(store)
     invoices = Invoices(store, mailer)
     performance = PerformanceMonitor(store, mailer)
@@ -284,6 +287,16 @@ async def inspect_rates(value: RateInspectionRequest, request: Request):
 @app.post('/api/rate-inspection/correct')
 async def correct_rates(value: RateCorrectionRequest, request: Request):
     return await rate_inspection.correct(value.inspection_id, value.row_ids, request.state.admin['id'])
+
+
+@app.get('/api/group-control/groups')
+async def group_control_groups():
+    return await group_control.groups()
+
+
+@app.post('/api/group-control/openai-fast')
+async def group_control_openai_fast(value: GroupOpenAIFastRequest, request: Request):
+    return await group_control.set_openai_fast(list(dict.fromkeys(value.group_ids)), value.enabled, request.state.admin['id'])
 
 
 @app.get('/api/upgrade')

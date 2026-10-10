@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, StrictBool, field_validator
 
 from .model_catalog import OPENAI_MODELS
 
@@ -262,6 +262,10 @@ class RateCorrectionRequest(BaseModel):
     inspection_id: str = Field(min_length=1, max_length=64)
     row_ids: list[str] = Field(min_length=1, max_length=10000)
 
+
+class GroupOpenAIFastRequest(BaseModel):
+    group_ids: list[Annotated[int, Field(strict=True, ge=1, le=9223372036854775807)]] = Field(min_length=1, max_length=200)
+    enabled: StrictBool
 
 
 class Enroll(BaseModel):
