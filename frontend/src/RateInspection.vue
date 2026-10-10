@@ -161,10 +161,12 @@ onUnmounted(() => controller?.abort())
       <p v-else-if="!busy" class="muted">点击「开始巡检」检查用户倍率。</p>
       <div v-if="pages > 1" class="form-actions"><button class="button" :disabled="page <= 1" @click="page--">上一页</button><span>{{ page }} / {{ pages }} · 共 {{ rows.length }} 条</span><button class="button" :disabled="page >= pages" @click="page++">下一页</button></div>
     </section>
-    <dialog ref="ruleDialog" class="rate-rules-dialog" aria-labelledby="rule-dialog-title">
+    <dialog ref="ruleDialog" class="rate-rules-dialog" aria-labelledby="rule-dialog-title" @click.self="ruleDialog.close()">
       <form @submit.prevent="saveRules">
-        <h2 id="rule-dialog-title">编辑充值档位规则</h2>
-        <p class="muted">仅展示和检查 GPT / OpenAI 分组，尊重用户分组访问权限。</p>
+        <div class="rule-dialog-heading">
+          <div><h2 id="rule-dialog-title">编辑充值档位规则</h2><p class="muted">仅展示和检查 GPT / OpenAI 分组，尊重用户分组访问权限。</p></div>
+          <button class="icon-button" type="button" aria-label="关闭充值档位规则" @click="ruleDialog.close()"><X :size="20"/></button>
+        </div>
         <p v-if="rulesError" class="notice error" role="alert">{{ rulesError }}</p>
         <template v-if="draftRules">
         <fieldset class="group-picker" :disabled="busy || correcting || savingRules || groupsLoading">
@@ -231,6 +233,7 @@ onUnmounted(() => controller?.abort())
 .rate-confirm { width: min(640px, calc(100vw - 32px)); border: 0; border-radius: 16px; padding: 28px; }
 .rate-rules-dialog { width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 0; border-radius: 16px; padding: 28px; }
 .rate-rules-dialog::backdrop, .rate-confirm::backdrop { background: #11182766; }
+.rule-dialog-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .tier-preview { display: grid; gap: 12px; margin-top: 16px; }
 .tier-ladder { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .tier-ladder li { display: grid; gap: 2px; min-width: 120px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
