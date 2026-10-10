@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Check, Plus, RefreshCw, Search, Trash2, X } from 'lucide-vue-next'
+import { Check, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-vue-next'
 import { api } from './api'
 
 const emit = defineEmits(['notify'])
@@ -8,6 +8,7 @@ const rules = ref(null)
 const draftRules = ref(null)
 const savingRules = ref(false)
 const rulesError = ref('')
+const ruleDialog = ref(null)
 const groups = ref([])
 const defaultGroupIds = ref([])
 const groupsLoading = ref(false)
@@ -19,6 +20,7 @@ const missingGroupIds = computed(() => chosenGroupIds.value.filter(id => !groups
 const savedGroupNames = computed(() => (rules.value?.group_ids ?? defaultGroupIds.value).map(id => groups.value.find(group => group.id === id)?.name || `#${id}（不可用）`).join('、'))
 const rulesDirty = computed(() => JSON.stringify(draftRules.value) !== JSON.stringify(rules.value))
 const lowestMinimum = computed(() => rules.value?.tiers.length ? Math.min(...rules.value.tiers.map(tier => tier.minimum)) : null)
+const sortedSavedTiers = computed(() => [...(rules.value?.tiers ?? [])].sort((a, b) => a.minimum - b.minimum))
 const clone = value => JSON.parse(JSON.stringify(value))
 async function loadRules() {
   rulesError.value = ''
@@ -48,6 +50,7 @@ async function saveRules() {
     draftRules.value = clone(rules.value)
     result.value = null; selected.value = []; correction.value = null
     emit('notify', '充值档位规则已保存，下一次巡检立即生效')
+    ruleDialog.value?.close()
   } catch (cause) { rulesError.value = cause.message }
   finally { savingRules.value = false }
 }
@@ -121,39 +124,16 @@ onUnmounted(() => controller?.abort())
 <template>
   <div class="rate-inspection">
     <section class="panel form-panel">
-      <div class="card-title"><div><h2>充值档位规则</h2><p>按历史累计正向充值匹配最高档位，包含管理员加款，扣款不冲减累计值。</p></div></div>
-      <p class="muted">仅展示和检查 GPT / OpenAI 分组，尊重用户分组访问权限。<template v-if="rules">当前已保存规则：未满 {{ format(lowestMinimum) }} 美元不调整倍率。</template></p>
-      <p v-if="rulesError" class="notice error" role="alert">{{ rulesError }} <button v-if="!rules" class="text-button" @click="loadRules">重试</button></p>
+      <div class="card-title"><div><h2>充值档位规则</h2><p>按历史累计正向充值匹配最高档位，包含管理员加款，扣款不冲减累计值。</p></div><button class="button" :disabled="!rules" @click="ruleDialog.showModal()"><Pencil :size="16"/>编辑规则</button></div>
+      <p v-if="rulesError && !rules" class="notice error" role="alert">{{ rulesError }} <button class="text-button" @click="loadRules">重试</button></p>
       <p v-if="!rules && !rulesError" class="muted">正在读取充值档位…</p>
-      <form v-if="draftRules" @submit.prevent="saveRules">
-        <fieldset class="group-picker" :disabled="busy || correcting || savingRules || groupsLoading">
-          <legend>适用分组 · 已选 {{ chosenGroupIds.length }} 个</legend>
-          <div class="group-tools"><input v-model="groupSearch" type="search" placeholder="搜索 GPT 分组名称或 ID" aria-label="搜索适用分组"/><button class="button" type="button" @click="loadGroups"><RefreshCw :size="15"/>刷新分组</button></div>
-          <p v-if="groupsLoading" class="small muted" role="status">正在读取分组…</p>
-          <p v-if="groupsError" class="notice error" role="alert">{{ groupsError }}</p>
-          <div class="group-options">
-            <label v-for="group in matchingGroups" :key="group.id" class="group-option"><input type="checkbox" :checked="chosenGroupIds.includes(group.id)" :disabled="!chosenGroupIds.includes(group.id) && chosenGroupIds.length >= 200" @change="toggleGroup(group.id, $event.target.checked)"/><span>{{ group.name }}<small>#{{ group.id }}<template v-if="group.platform"> · {{ group.platform }}</template></small></span></label>
-          </div>
-          <p v-if="!groupsLoading && !groupsError && !matchingGroups.length" class="small muted">{{ groups.length ? '没有匹配的分组。' : '没有可用分组，请先在 Sub2API 中创建或启用分组。' }}</p>
-          <p v-for="id in missingGroupIds" :key="id" class="notice error">分组 #{{ id }} 已停用、不存在或非 GPT 分组。<button type="button" class="text-button" @click="toggleGroup(id, false)">移除选择</button></p>
-          <p class="small muted">至少选择 1 个分组，最多 200 个；所选分组共用下方充值档位。</p>
-          <p v-if="!groupsLoading && !groupsError" class="small muted">{{ rules.group_ids === null ? '默认适用分组' : '已保存适用分组' }}：{{ savedGroupNames || '未选择' }}</p>
-        </fieldset>
-        <div class="tier-editor">
-          <div v-for="(tier, index) in draftRules.tiers" :key="index" class="tier-row">
-            <label>累计充值门槛（USD）<input v-model.number="tier.minimum" type="number" min="0" max="1000000000000" step="any" required :disabled="busy || correcting || savingRules" :aria-label="`第 ${index + 1} 档充值门槛`"/></label>
-            <label>用户倍率<input v-model.number="tier.rate" type="number" min="0.0001" max="1000" step="0.0001" required :disabled="busy || correcting || savingRules" :aria-label="`第 ${index + 1} 档倍率`"/></label>
-            <button type="button" class="button" :disabled="busy || correcting || savingRules || draftRules.tiers.length <= 1" :aria-label="`删除第 ${index + 1} 档`" @click="draftRules.tiers.splice(index, 1)"><Trash2 :size="16"/>删除</button>
-          </div>
-        </div>
-        <p class="small muted">门槛不能重复，倍率最多 4 位小数；匹配已达到的最高门槛。编辑后请先保存，已有巡检结果需重新检查。</p>
-        <div class="form-actions">
-          <button type="button" class="button" :disabled="busy || correcting || savingRules || draftRules.tiers.length >= 50" @click="draftRules.tiers.push({ minimum: '', rate: '' })"><Plus :size="16"/>新增档位</button>
-          <button class="button primary" :disabled="busy || correcting || savingRules || groupsLoading || !!groupsError || !chosenGroupIds.length || !!missingGroupIds.length || !rulesDirty"><Check :size="16"/>{{ savingRules ? '正在保存…' : '保存档位规则' }}</button>
-          <button type="button" class="button" :disabled="busy || correcting || savingRules || !rulesDirty" @click="draftRules = clone(rules)">撤销未保存修改</button>
-        </div>
-        <p v-if="rulesDirty" class="notice">档位或分组有未保存修改，请保存或撤销后再巡检和纠正。</p>
-      </form>
+      <div v-if="rules" class="tier-preview">
+        <ol class="tier-ladder" aria-label="已保存的充值档位">
+          <li v-for="tier in sortedSavedTiers" :key="tier.minimum"><small>累计 ≥ ${{ format(tier.minimum) }}</small><strong>{{ format(tier.rate) }}×</strong></li>
+        </ol>
+        <p class="small muted">未满 {{ format(lowestMinimum) }} 美元不调整倍率 · 适用分组：{{ savedGroupNames || '未选择' }}</p>
+      </div>
+      <p v-if="rulesDirty" class="notice">档位或分组有未保存修改，请打开「编辑规则」保存或撤销后再巡检和纠正。</p>
     </section>
     <section class="panel form-panel">
       <div class="card-title"><div><h2>用户倍率巡检</h2><p>留空巡检全部用户，也可填写指定邮箱。</p></div></div>
@@ -181,6 +161,42 @@ onUnmounted(() => controller?.abort())
       <p v-else-if="!busy" class="muted">点击「开始巡检」检查用户倍率。</p>
       <div v-if="pages > 1" class="form-actions"><button class="button" :disabled="page <= 1" @click="page--">上一页</button><span>{{ page }} / {{ pages }} · 共 {{ rows.length }} 条</span><button class="button" :disabled="page >= pages" @click="page++">下一页</button></div>
     </section>
+    <dialog ref="ruleDialog" class="rate-rules-dialog" aria-labelledby="rule-dialog-title">
+      <form @submit.prevent="saveRules">
+        <h2 id="rule-dialog-title">编辑充值档位规则</h2>
+        <p class="muted">仅展示和检查 GPT / OpenAI 分组，尊重用户分组访问权限。</p>
+        <p v-if="rulesError" class="notice error" role="alert">{{ rulesError }}</p>
+        <template v-if="draftRules">
+        <fieldset class="group-picker" :disabled="busy || correcting || savingRules || groupsLoading">
+          <legend>适用分组 · 已选 {{ chosenGroupIds.length }} 个</legend>
+          <div class="group-tools"><input v-model="groupSearch" type="search" placeholder="搜索 GPT 分组名称或 ID" aria-label="搜索适用分组"/><button class="button" type="button" @click="loadGroups"><RefreshCw :size="15"/>刷新分组</button></div>
+          <p v-if="groupsLoading" class="small muted" role="status">正在读取分组…</p>
+          <p v-if="groupsError" class="notice error" role="alert">{{ groupsError }}</p>
+          <div class="group-options">
+            <label v-for="group in matchingGroups" :key="group.id" class="group-option"><input type="checkbox" :checked="chosenGroupIds.includes(group.id)" :disabled="!chosenGroupIds.includes(group.id) && chosenGroupIds.length >= 200" @change="toggleGroup(group.id, $event.target.checked)"/><span>{{ group.name }}<small>#{{ group.id }}<template v-if="group.platform"> · {{ group.platform }}</template></small></span></label>
+          </div>
+          <p v-if="!groupsLoading && !groupsError && !matchingGroups.length" class="small muted">{{ groups.length ? '没有匹配的分组。' : '没有可用分组，请先在 Sub2API 中创建或启用分组。' }}</p>
+          <p v-for="id in missingGroupIds" :key="id" class="notice error">分组 #{{ id }} 已停用、不存在或非 GPT 分组。<button type="button" class="text-button" @click="toggleGroup(id, false)">移除选择</button></p>
+          <p class="small muted">至少选择 1 个分组，最多 200 个；所选分组共用下方充值档位。</p>
+          <p v-if="!groupsLoading && !groupsError" class="small muted">{{ rules.group_ids === null ? '默认适用分组' : '已保存适用分组' }}：{{ savedGroupNames || '未选择' }}</p>
+        </fieldset>
+        <div class="tier-editor">
+          <div v-for="(tier, index) in draftRules.tiers" :key="index" class="tier-row">
+            <label>累计充值门槛（USD）<input v-model.number="tier.minimum" type="number" min="0" max="1000000000000" step="any" required :disabled="busy || correcting || savingRules" :aria-label="`第 ${index + 1} 档充值门槛`"/></label>
+            <label>用户倍率<input v-model.number="tier.rate" type="number" min="0.0001" max="1000" step="0.0001" required :disabled="busy || correcting || savingRules" :aria-label="`第 ${index + 1} 档倍率`"/></label>
+            <button type="button" class="button" :disabled="busy || correcting || savingRules || draftRules.tiers.length <= 1" :aria-label="`删除第 ${index + 1} 档`" @click="draftRules.tiers.splice(index, 1)"><Trash2 :size="16"/>删除</button>
+          </div>
+        </div>
+        <p class="small muted">门槛不能重复，倍率最多 4 位小数；匹配已达到的最高门槛。编辑后请先保存，已有巡检结果需重新检查。</p>
+        <div class="form-actions">
+          <button type="button" class="button" :disabled="busy || correcting || savingRules || draftRules.tiers.length >= 50" @click="draftRules.tiers.push({ minimum: '', rate: '' })"><Plus :size="16"/>新增档位</button>
+          <button class="button primary" :disabled="busy || correcting || savingRules || groupsLoading || !!groupsError || !chosenGroupIds.length || !!missingGroupIds.length || !rulesDirty"><Check :size="16"/>{{ savingRules ? '正在保存…' : '保存档位规则' }}</button>
+          <button type="button" class="button" :disabled="busy || correcting || savingRules || !rulesDirty" @click="draftRules = clone(rules)">撤销未保存修改</button>
+        </div>
+        <p v-if="rulesDirty" class="notice">档位或分组有未保存修改，请保存或撤销后再巡检和纠正。</p>
+        </template>
+      </form>
+    </dialog>
     <dialog ref="confirmation" class="rate-confirm" aria-labelledby="rate-confirm-title">
       <form @submit.prevent="correct"><h2 id="rate-confirm-title">确认纠正 {{ selected.length }} 条倍率</h2><p>将以下用户分组调整为预期倍率。提交前会重新核对充值和倍率，结果变化时需重新巡检。</p>
         <div class="rate-confirm-list"><p v-for="row in selectedRows" :key="row.id"><strong>{{ row.email }}</strong> · {{ row.group }}<br/>{{ format(row.current) }}× → {{ format(row.expected) }}×</p></div>
@@ -213,7 +229,14 @@ onUnmounted(() => controller?.abort())
 .rate-table small { display: block; margin-top: 4px; color: var(--muted); }
 .rate-table input { width: 16px; height: 16px; }
 .rate-confirm { width: min(640px, calc(100vw - 32px)); border: 0; border-radius: 16px; padding: 28px; }
-.rate-confirm::backdrop { background: #11182766; }
+.rate-rules-dialog { width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 0; border-radius: 16px; padding: 28px; }
+.rate-rules-dialog::backdrop, .rate-confirm::backdrop { background: #11182766; }
+.tier-preview { display: grid; gap: 12px; margin-top: 16px; }
+.tier-ladder { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.tier-ladder li { display: grid; gap: 2px; min-width: 120px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.tier-ladder small { color: var(--muted); }
+.tier-ladder strong { font-size: 18px; }
+
 .rate-confirm-list { max-height: 45vh; overflow: auto; }
 @media (max-width: 680px) { .tier-row { grid-template-columns: 1fr; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); } }
 </style>
