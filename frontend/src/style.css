@@ -84,4 +84,4 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
 .cooldown-panel .table-scroll table{min-width:950px;table-layout:fixed}
 .cooldown-panel .table-scroll th:nth-child(1){width:20%}.cooldown-panel .table-scroll th:nth-child(2){width:25%}.cooldown-panel .table-scroll th:nth-child(3){width:18%}.cooldown-panel .table-scroll th:nth-child(4){width:20%}.cooldown-panel .table-scroll th:nth-child(5){width:17%}
 .cooldown-countdown{display:inline-block;min-width:92px;font-variant-numeric:tabular-nums}
-.usage-overload-count{display:block;margin-top:7px;color:#ad3f43;font-size:13px;font-weight:550}
+.usage-overload-count{display:block;margin-top:7px;color:var(--muted);font-size:13px}.usage-overload-value{color:#ad3f43;font-weight:650}
