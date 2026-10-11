@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, Pool, AdminLogin, AdminLogin2FA, RateInspectionRequest, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -280,8 +280,8 @@ async def postgres_test(value: PostgresSettingsUpdate):
 
 
 @app.post('/api/rate-inspection')
-async def inspect_rates(value: RateInspectionRequest, request: Request):
-    return await rate_inspection.inspect(value.emails, request.state.admin['id'])
+async def inspect_rates(request: Request):
+    return await rate_inspection.inspect(request.state.admin['id'])
 
 
 @app.post('/api/rate-inspection/correct')

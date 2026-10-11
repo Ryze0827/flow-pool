@@ -2,7 +2,6 @@
 import asyncio
 import hashlib
 import os
-import re
 import time
 import unicodedata
 from collections import defaultdict
@@ -26,7 +25,6 @@ INSPECTION_SQL = '''
 WITH target_users AS (
     SELECT id, username, email, restrict_public_groups FROM users
     WHERE deleted_at IS NULL
-      AND (%(all_emails)s OR lower(trim(email)) = ANY(%(emails)s::text[]))
       AND (%(all_ids)s OR id = ANY(%(user_ids)s::bigint[]))
 ), recharge AS (
     SELECT r.used_by, SUM(r.value) AS total
@@ -46,13 +44,6 @@ LEFT JOIN user_group_rate_multipliers m ON m.user_id = u.id AND m.group_id = g.i
 WHERE g.id = ANY(%(group_ids)s::bigint[]) AND g.deleted_at IS NULL AND g.status = 'active' AND g.platform = 'openai'
 ORDER BY u.id, g.id
 '''
-
-
-def normalize_emails(value):
-    emails = list(dict.fromkeys(part.lower() for part in re.split(r'[\s,;，；]+', value.strip()) if part))
-    if any(not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) for email in emails):
-        raise HTTPException(422, '邮箱格式不正确，请使用换行、逗号、分号或空格分隔')
-    return emails
 
 
 def number(value):
@@ -85,15 +76,13 @@ def select_groups(groups, rules):
     return selected
 
 
-def summarize(records, emails, rules=None):
+def summarize(records, rules=None):
     rules = rules if rules is not None else RateRules()
     users, checked_users, abnormal = set(), set(), set()
-    found_emails = set()
     rows, checked = [], 0
     for record in records:
         user_id = record['user_id']
         users.add(user_id)
-        found_emails.add(record['email'].strip().lower())
         total = number(record['total'])
         if total is None:
             raise HTTPException(502, '历史充值数据无效，本次巡检未完成')
@@ -112,8 +101,7 @@ def summarize(records, emails, rules=None):
                      'current': float(current) if current is not None else None, 'custom': record['custom'],
                      'status': 'mismatch' if current is not None else 'invalid'})
     return {'rows': rows, 'processed': len(users), 'checked': checked, 'skipped': len(users - checked_users),
-            'abnormal_users': len(abnormal), 'missing_emails': [email for email in emails if email not in found_emails],
-            'completed_at': datetime.now(timezone.utc).isoformat()}
+            'abnormal_users': len(abnormal), 'completed_at': datetime.now(timezone.utc).isoformat()}
 
 
 class RateInspection:
@@ -132,10 +120,10 @@ class RateInspection:
         return hashlib.sha256('\n'.join((settings.base_url, settings.admin_key, legacy_dsn,
             self.store.postgres_settings().model_dump_json(), self.store.rate_rules().model_dump_json())).encode()).hexdigest()
 
-    async def read(self, emails=None, user_ids=None, include_values=False):
+    async def read(self, user_ids=None, include_values=False):
         rules = self.store.rate_rules()
-        records = await self.read_postgres(emails, user_ids, rules) if postgres_configured(self.store) else await self.read_api(emails, user_ids, rules)
-        result = summarize(records, emails or [], rules)
+        records = await self.read_postgres(user_ids, rules) if postgres_configured(self.store) else await self.read_api(user_ids, rules)
+        result = summarize(records, rules)
         result['rules'] = rules.model_dump()
         if include_values:
             result['values'] = {f"{row['user_id']}:{row['group_id']}": number(row['current'])
@@ -156,7 +144,7 @@ class RateInspection:
         return {'items': [{'id': group['id'], 'name': group['name'], 'platform': group.get('platform', '')}
                           for group in groups], 'default_group_ids': [group['id'] for group in default_groups(groups)]}
 
-    async def read_api(self, emails, user_ids, rules):
+    async def read_api(self, user_ids, rules):
         # Compatibility mode: use the server's lifetime aggregate, never infer
         # recharge from balance or a partial page of balance-history items.
         async with Sub2API(self.store.settings()) as client:
@@ -175,8 +163,7 @@ class RateInspection:
                 users = []
                 for offset in range(0, len(user_ids), 4):
                     users.extend(await asyncio.gather(*(client.request('GET', f'users/{key}') for key in user_ids[offset:offset + 4])))
-            users = [user for user in users if not user.get('deleted_at')
-                     and (emails is None or user['email'].strip().lower() in emails)]
+            users = [user for user in users if not user.get('deleted_at')]
             if len({user['id'] for user in users}) != len(users):
                 raise HTTPException(409, '分页期间用户列表已变化，请重新巡检')
 
@@ -198,12 +185,12 @@ class RateInspection:
                     records.extend(rows)
             return records
 
-    async def read_postgres(self, emails, user_ids, rules):
+    async def read_postgres(self, user_ids, rules):
         async with Sub2Postgres(self.store).snapshot() as cursor:
             await cursor.execute(GROUPS_SQL)
             groups = select_groups(await cursor.fetchall(), rules)
-            await cursor.execute(INSPECTION_SQL, {'all_emails': emails is None, 'emails': emails or [],
-                'all_ids': user_ids is None, 'user_ids': user_ids or [], 'group_ids': [g['id'] for g in groups]})
+            await cursor.execute(INSPECTION_SQL, {'all_ids': user_ids is None, 'user_ids': user_ids or [],
+                'group_ids': [g['id'] for g in groups]})
             return await cursor.fetchall()
 
     async def verify_backend(self):
@@ -211,13 +198,12 @@ class RateInspection:
         async with Sub2API(self.store.settings()) as client:
             await client.request('GET', 'settings/admin-api-key')
 
-    async def inspect(self, raw_emails, owner_id):
+    async def inspect(self, owner_id):
         if self.lock.locked():
             raise HTTPException(409, '正在巡检或纠正，请稍后重试')
         async with self.lock:
-            emails = normalize_emails(raw_emails)
             identity = self.connection_identity()
-            result = await self.read(emails=emails or None)
+            result = await self.read()
             await self.verify_backend()
             if identity != self.connection_identity():
                 raise HTTPException(409, '连接配置或充值档位已变化，请重新巡检')

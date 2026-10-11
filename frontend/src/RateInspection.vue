@@ -61,7 +61,6 @@ function acceptInspection(value) {
   draftRules.value = clone(value.rules)
 }
 onMounted(() => { void loadRules(); void loadGroups() })
-const emails = ref('')
 const result = ref(null)
 const selected = ref([])
 const busy = ref(false)
@@ -88,7 +87,7 @@ async function inspect() {
   page.value = 1
   const current = new AbortController()
   controller = current
-  try { acceptInspection(await api('/rate-inspection', 'POST', { emails: emails.value }, { signal: current.signal })) }
+  try { acceptInspection(await api('/rate-inspection', 'POST', undefined, { signal: current.signal })) }
   catch (cause) { if (!current.signal.aborted) error.value = cause.message }
   finally { if (controller === current) { busy.value = false; controller = null } }
 }
@@ -110,7 +109,7 @@ async function correct() {
   try {
     correction.value = await api('/rate-inspection/correct', 'POST', { inspection_id: inspectionId, row_ids: selected.value })
     emit('notify', `确认纠正 ${correction.value.succeeded} 条，未确认 ${correction.value.failed} 条`, correction.value.failed > 0)
-    acceptInspection(await api('/rate-inspection', 'POST', { emails: emails.value }))
+    acceptInspection(await api('/rate-inspection', 'POST'))
     page.value = 1
   } catch (cause) { error.value = cause.message }
   finally {
@@ -136,8 +135,7 @@ onUnmounted(() => controller?.abort())
       <p v-if="rulesDirty" class="notice">档位或分组有未保存修改，请打开「编辑规则」保存或撤销后再巡检和纠正。</p>
     </section>
     <section class="panel form-panel">
-      <div class="card-title"><div><h2>用户倍率巡检</h2><p>留空巡检全部用户，也可填写指定邮箱。</p></div></div>
-      <label>巡检用户<textarea v-model="emails" rows="3" :disabled="busy || correcting" placeholder="支持换行、逗号、分号或空格分隔"/></label>
+      <div class="card-title"><div><h2>用户倍率巡检</h2><p>每次巡检都会检查所有未删除用户。</p></div></div>
       <div class="form-actions">
         <button class="button primary" :disabled="busy || correcting || savingRules || groupsLoading || !!groupsError || rulesDirty || !rules || !chosenGroupIds.length || !!missingGroupIds.length" @click="inspect"><Search :size="16"/>{{ busy ? '正在巡检…' : '开始巡检' }}</button>
         <button v-if="busy" class="button" @click="cancel"><X :size="16"/>取消巡检</button>
@@ -148,7 +146,6 @@ onUnmounted(() => controller?.abort())
       <template v-if="result">
         <div class="rate-summary"><span>已处理 <b>{{ result.processed }}</b> 位用户</span><span>已检查 <b>{{ result.checked }}</b> 个用户分组</span><span>无适用规则 <b>{{ result.skipped }}</b> 位</span><span>异常用户 <b>{{ result.abnormal_users }}</b> 位</span></div>
         <p class="small muted">巡检时间：{{ new Date(result.completed_at).toLocaleString('zh-CN') }} · 结果有效期 30 分钟</p>
-        <p v-if="result.missing_emails.length" class="notice error">未找到邮箱：{{ result.missing_emails.join('、') }}</p>
         <p v-if="!result.inspection_id && !correcting" class="notice">本次纠正已结束，请重新巡检查看最新状态。</p>
       </template>
       <div v-if="correction" class="notice" role="status">已确认纠正 {{ correction.succeeded }} 条，未确认 {{ correction.failed }} 条。<p v-for="item in correction.results.filter(item => item.error)" :key="item.id">{{ item.id }}：{{ item.error }}</p></div>
@@ -210,7 +207,6 @@ onUnmounted(() => controller?.abort())
 
 <style scoped>
 .rate-inspection { display: grid; gap: 20px; }
-.rate-inspection textarea { width: 100%; resize: vertical; border: 1px solid var(--control-border); border-radius: 9px; padding: 12px; background: white; color: var(--text); }
 .group-picker { margin: 20px 0 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
 .group-picker legend { padding: 0 6px; font-weight: 600; }
 .group-tools { display: flex; gap: 12px; }

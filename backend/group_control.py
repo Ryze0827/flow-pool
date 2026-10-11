@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from .postgres import Sub2Postgres, postgres_configured
 from .sub2api import Sub2API, UpstreamError
 
-GROUPS_SQL = "SELECT id, name, status, force_openai_fast FROM groups WHERE deleted_at IS NULL AND platform='openai' ORDER BY id"
+GROUPS_SQL = "SELECT id, name, status, force_openai_fast FROM groups WHERE deleted_at IS NULL AND platform='openai' AND status='active' ORDER BY id"
 
 
 def flag(value):
@@ -26,7 +26,7 @@ class GroupControl:
         else:
             async with Sub2API(self.store.settings()) as client:
                 groups = [group for group in await client.all('groups', platform='openai')
-                          if group.get('platform') == 'openai' and not group.get('deleted_at')]
+                          if group.get('platform') == 'openai' and group.get('status') == 'active' and not group.get('deleted_at')]
         return [{'id': group['id'], 'name': group['name'], 'status': group.get('status', ''),
                  'force_openai_fast': flag(group.get('force_openai_fast'))} for group in groups]
 
@@ -39,7 +39,7 @@ class GroupControl:
         async with self.lock:
             current = {group['id']: group for group in await self.gpt_groups()}
             if any(group_id not in current for group_id in group_ids):
-                raise HTTPException(409, '所选分组已删除或不属于 GPT / OpenAI 平台，请刷新后重试')
+                raise HTTPException(409, '所选分组已停用、删除或不属于 GPT / OpenAI 平台，请刷新后重试')
             results = []
             async with Sub2API(self.store.settings()) as client:
                 for offset in range(0, len(group_ids), 4):

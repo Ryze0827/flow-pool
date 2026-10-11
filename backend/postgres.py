@@ -115,6 +115,7 @@ class Sub2Postgres:
                 'SELECT user_id, group_id FROM user_allowed_groups LIMIT 0',
                 'SELECT user_id, group_id, rate_multiplier FROM user_group_rate_multipliers LIMIT 0',
                 'SELECT id, account_id, group_id, model, reasoning_effort, first_token_ms, duration_ms, created_at FROM usage_logs LIMIT 0',
+                'SELECT account_id, created_at, error_body FROM ops_error_logs LIMIT 0',
                 'SELECT id, name, platform, type, status, schedulable, priority, concurrency, created_at, expires_at, auto_pause_on_expired, rate_limit_reset_at, overload_until, temp_unschedulable_until, error_message, extra, deleted_at FROM accounts LIMIT 0',
                 'SELECT account_id, group_id FROM account_groups LIMIT 0',
             ):

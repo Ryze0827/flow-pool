@@ -31,6 +31,8 @@ const nav = [
   { id: 'invoices', name: '发票管理', icon: FileJson }
 ]
 const pools = [{ id: 'priority', name: '高权重组', desc: '核心账号，稳定交付', icon: Zap, color: 'purple' }, { id: 'risk', name: '风控组', desc: '独立归档，持续观察', icon: ShieldCheck, color: 'teal' }, { id: 'third_party', name: '三方账号组', desc: '外部资源，统一管理', icon: Layers3, color: 'blue' }]
+const usagePools = [pools[1], pools[0], pools[2]]
+const needsDashboard = view => !['rates', 'groups', 'settings'].includes(view)
 const routePaths = { overview: '/overview', accounts: '/accounts', usage: '/usage', import: '/import', rates: '/rate-inspection', groups: '/group-control', rules: '/rules', events: '/events', mail: '/mail', invoices: '/invoices', settings: '/settings' }
 const pageFromPath = path => Object.entries(routePaths).find(([, route]) => route === path)?.[0] || 'overview'
 const page = ref(pageFromPath(globalThis.location?.pathname || '/'))
@@ -42,6 +44,7 @@ const refreshIntervalSeconds = 10
 const settings = ref(null)
 const data = ref({ accounts: [], events: [], inspections: [], batches: [], worker: {}, configured: false })
 const usagePoolRecords = ref({ priority: [], risk: [], third_party: [] })
+const usagePoolErrorCounts = ref({ priority: null, risk: null, third_party: null })
 const usageTotal = ref(0)
 const usageActiveCounts = computed(() => Object.fromEntries(pools.map(pool => [pool.id, data.value.accounts.filter(account => account.pool === pool.id && ['active', 'probation'].includes(account.state) && account.remote?.schedulable === true && !availabilityIssue(account)).length])))
 const usageLoading = ref(false)
@@ -204,12 +207,16 @@ function handlePopState() {
   queueMicrotask(() => { syncingRoute.value = false })
 }
 
-watch(page, value => {
+watch(page, (value, previous) => {
   if (value !== 'import') relogin.value = null
   if (syncingRoute.value) return
   const path = routePaths[value] || routePaths.overview
   if (globalThis.location.pathname !== path) globalThis.history.pushState({}, '', path)
   if (value === 'usage' && settings.value) void loadUsage()
+  if (!needsDashboard(previous) && needsDashboard(value) && settings.value) {
+    void refresh()
+    void loadRanking()
+  }
 })
 
 function notify(message, error = false) {
@@ -238,6 +245,7 @@ async function loadUsage() {
   try {
     const result = await api('/usage/pools?limit=15')
     usagePoolRecords.value = Object.fromEntries(pools.map(pool => [pool.id, result.pools?.[pool.id]?.items || []]))
+    usagePoolErrorCounts.value = Object.fromEntries(pools.map(pool => [pool.id, result.pools?.[pool.id]?.overload_error_count ?? null]))
     usageTotal.value = Object.values(usagePoolRecords.value).reduce((total, items) => total + items.length, 0)
   } catch (error) {
     loadError.value = error.message
@@ -264,8 +272,8 @@ async function loadWorkspace() {
   importOptions.value = clone(settings.value.import_options)
   await refresh()
   if (data.value.configured) {
-    await loadMetadata()
-    await loadRanking()
+    if (needsDashboard(page.value)) await loadMetadata()
+    if (needsDashboard(page.value)) await loadRanking()
     if (page.value === 'usage') await loadUsage()
   }
 }
@@ -474,8 +482,13 @@ onMounted(async () => {
   window.addEventListener('flowpool-auth-expired', handleAuthExpired)
   globalThis.addEventListener('popstate', handlePopState)
   await loadAuthStatus()
-  polling = setInterval(() => { void refresh(); if (page.value === 'usage') void loadUsage() }, refreshIntervalSeconds * 1000)
-  rankingPolling = setInterval(() => { void loadRanking() }, 30000)
+  polling = setInterval(() => {
+    if (needsDashboard(page.value)) void refresh()
+    if (page.value === 'usage') void loadUsage()
+  }, refreshIntervalSeconds * 1000)
+  rankingPolling = setInterval(() => {
+    if (needsDashboard(page.value)) void loadRanking()
+  }, 30000)
   clock = setInterval(() => { now.value = Date.now() / 1000 }, 1000)
 })
 onUnmounted(() => {
@@ -552,12 +565,12 @@ onUnmounted(() => {
           <section v-if="page === 'events'" class="panel"><div class="panel-heading"><h2>调度与操作记录</h2><button class="button" @click="refresh"><RefreshCw :size="15"/>刷新 · 每 {{ refreshIntervalSeconds }} 秒</button></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>级别</th><th>账号</th><th>操作</th><th>详情</th></tr></thead><tbody><tr v-for="event in data.events" :key="event.id"><td class="muted small">{{ timeText(event.created_at) }}</td><td><span :class="['badge', event.level === 'info' ? 'success' : 'warning']">{{ { info: '信息', warning: '提醒', error: '异常' }[event.level] }}</span></td><td>{{ event.account_id ? '#' + event.account_id : '系统' }}</td><td>{{ { settings: '更新设置', guard: '风控设置', rpm_alert: 'RPM 增长告警', rate_correction: '用户倍率纠正', rate_rules: '充值档位规则', group_openai_fast: '分组 OpenAI Fast', postgres_settings: '数据库连接设置', mail_settings: '邮件配置', mail_error: '邮件异常', auto_relogin: '自动重登', auto_relogin_error: '自动重登失败', image_cooldown: '冷却 · 仅生图调度', pause: '暂停调度', resume: '恢复调度', healthy: '观察通过', replacement: '启用替补调度', enroll: '录入号池', remove: '移出号池', import: '推送账号', import_observation: '入池观察', upstream_error: '接口异常', worker_error: '调度异常' }[event.action] || event.action }}</td><td>{{ event.message }}</td></tr></tbody></table></div><div v-if="!data.events.length" class="empty-state"><Activity :size="28"/><h3>还没有操作日志</h3><p>连接、上号与调度决策会在这里留下记录。</p></div></section>
           <section v-if="page === 'usage'" class="panel usage-panel">
             <div class="panel-heading usage-heading">
-              <div><h2>账号调用记录 <span class="count-chip">{{ usageTotal }}</span></h2><p>三类本地号池同时展示最新调用记录</p></div>
+              <div><h2>账号调用记录 <span class="count-chip">{{ usageTotal }}</span></h2><p>三类本地号池同时展示最新调用记录和最近 5 分钟过载错误数</p></div>
               <div class="usage-actions"><div class="column-settings-wrap"><button class="button" @click="usageColumnsOpen = !usageColumnsOpen"><ListFilter :size="15"/>列设置</button><div v-if="usageColumnsOpen" class="column-settings"><strong>可选列</strong><label v-for="(label, key) in usageColumnLabels" :key="key"><input v-model="settings.usage_visible_columns" type="checkbox" :value="key" @change="saveUsageColumns"/>{{ label }}</label><small>账号、延迟、时间固定展示</small></div></div><button class="button" :disabled="usageLoading" @click="loadUsage"><RefreshCw :size="15" :class="{ spinning: usageLoading }"/>刷新 · 每 {{ refreshIntervalSeconds }} 秒</button></div>
             </div>
             <div v-if="!data.configured" class="empty-state"><Unplug :size="28"/><h3>请先连接 Sub2API</h3><p>配置管理员 API Key 后才能读取账号调用记录。</p><button class="button" @click="page = 'settings'">配置连接<ArrowRight :size="15"/></button></div>
             <div v-else class="usage-pool-grid">
-              <section v-for="pool in pools" :key="pool.id" :class="['usage-pool-card', pool.color]"><div class="usage-pool-heading"><div><h3>{{ pool.name }}</h3><small>{{ pool.desc }}</small><span class="usage-active-count"><span class="dot green"></span>正在调度中 {{ usageActiveCounts[pool.id] || 0 }} 个</span></div><span class="count-chip">{{ usagePoolRecords[pool.id]?.length || 0 }} 条记录</span></div><div class="usage-records-scroll"><table class="usage-table" :class="{ 'usage-table-expanded': settings.usage_visible_columns.length > 0 }"><thead><tr><th>账号</th><th v-if="isUsageColumnVisible('model')">模型</th><th v-if="isUsageColumnVisible('reasoning_effort')">推理强度</th><th v-if="isUsageColumnVisible('group')">分组</th><th>延迟</th><th>时间</th></tr></thead><tbody><tr v-for="record in usagePoolRecords[pool.id]" :key="record.id"><td><strong>{{ record.account_name || `#${record.account_id}` }}</strong><small>#{{ record.account_id }}</small></td><td v-if="isUsageColumnVisible('model')">{{ record.model || '—' }}</td><td v-if="isUsageColumnVisible('reasoning_effort')"><span class="reasoning-tag">{{ record.reasoning_effort || '—' }}</span></td><td v-if="isUsageColumnVisible('group')"><span class="pool-tag">{{ record.group_name || '未分组' }}</span></td><td><div class="latency-cell"><span :class="{ 'slow-latency': record.first_token_ms > settings.rule.threshold_ms }">首字 {{ latencyText(record.first_token_ms) }}</span><small>总耗时 {{ latencyText(record.duration_ms) }}</small></div></td><td class="muted small">{{ usageTimeText(record.created_at) }}</td></tr></tbody></table><div v-if="!usagePoolRecords[pool.id]?.length" class="usage-pool-empty">暂无调用记录</div></div></section>
+              <section v-for="pool in usagePools" :key="pool.id" :class="['usage-pool-card', pool.color]"><div class="usage-pool-heading"><div><h3>{{ pool.name }}</h3><small>{{ pool.desc }}</small><span class="usage-active-count"><span class="dot green"></span>正在调度中 {{ usageActiveCounts[pool.id] || 0 }} 个</span><span class="usage-overload-count" :title="'响应内容包含 Our servers are currently overloaded 的错误请求数'">最近 5 分钟过载错误 {{ usagePoolErrorCounts[pool.id] === null ? '需配置 PostgreSQL' : usagePoolErrorCounts[pool.id] + ' 次' }}</span></div><span class="count-chip">{{ usagePoolRecords[pool.id]?.length || 0 }} 条记录</span></div><div class="usage-records-scroll"><table class="usage-table" :class="{ 'usage-table-expanded': settings.usage_visible_columns.length > 0 }"><thead><tr><th>账号</th><th v-if="isUsageColumnVisible('model')">模型</th><th v-if="isUsageColumnVisible('reasoning_effort')">推理强度</th><th v-if="isUsageColumnVisible('group')">分组</th><th>延迟</th><th>时间</th></tr></thead><tbody><tr v-for="record in usagePoolRecords[pool.id]" :key="record.id"><td><strong>{{ record.account_name || `#${record.account_id}` }}</strong><small>#{{ record.account_id }}</small></td><td v-if="isUsageColumnVisible('model')">{{ record.model || '—' }}</td><td v-if="isUsageColumnVisible('reasoning_effort')"><span class="reasoning-tag">{{ record.reasoning_effort || '—' }}</span></td><td v-if="isUsageColumnVisible('group')"><span class="pool-tag">{{ record.group_name || '未分组' }}</span></td><td><div class="latency-cell"><span :class="{ 'slow-latency': record.first_token_ms > settings.rule.threshold_ms }">首字 {{ latencyText(record.first_token_ms) }}</span><small>总耗时 {{ latencyText(record.duration_ms) }}</small></div></td><td class="muted small">{{ usageTimeText(record.created_at) }}</td></tr></tbody></table><div v-if="!usagePoolRecords[pool.id]?.length" class="usage-pool-empty">暂无调用记录</div></div></section>
             </div>
           </section>
         </template>
@@ -565,7 +578,7 @@ onUnmounted(() => {
         <footer class="page-footer"><span><Database :size="13"/>数据保存在本机 · SQLite</span><span>自动调度，让账号各得其时。</span></footer>
       </div>
     </main>
-    <RankingSidebar v-if="settings && !['rates', 'groups', 'settings'].includes(page)" :accounts="rankingAccounts" :sample-size="rankingSampleSize" :refresh-text="rankingRefreshText"/>
+    <RankingSidebar v-if="settings && needsDashboard(page)" :accounts="rankingAccounts" :sample-size="rankingSampleSize" :refresh-text="rankingRefreshText"/>
 
     <ReloginAccount v-if="page === 'import' && relogin" :batch="relogin.batch" :item="relogin.item" :source="relogin.source" @close="relogin = null" @loading="loginLoading = $event" @updated="reloginUpdated"/>
 

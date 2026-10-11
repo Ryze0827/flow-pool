@@ -163,7 +163,9 @@ class Analytics:
         records = {pool: [] for pool in POOLS}
         more = {pool: False for pool in POOLS}
         mapping = {int(a['id']): a['pool'] for a in self.store.accounts()}
-        if mapping and postgres_configured(self.store):
+        use_postgres = postgres_configured(self.store)
+        overload_error_counts = {pool: 0 if use_postgres else None for pool in POOLS}
+        if mapping and use_postgres:
             async with self.snapshot() as cursor:
                 for pool in POOLS:
                     ids = [key for key, value in mapping.items() if value == pool]
@@ -182,6 +184,12 @@ class Analytics:
                     ) u {USAGE_JOINS} ORDER BY u.created_at DESC, u.id DESC''', (ids, limit + 1, limit + 1))
                     rows = records_json(await cursor.fetchall())
                     records[pool], more[pool] = rows[:limit], len(rows) > limit
+                    await cursor.execute('''SELECT COUNT(*) AS count FROM ops_error_logs
+                        WHERE account_id = ANY(%s::bigint[])
+                          AND created_at >= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                          AND created_at <= CURRENT_TIMESTAMP
+                          AND error_body ILIKE %s''', (ids, '%Our servers are currently overloaded%'))
+                    overload_error_counts[pool] = int((await cursor.fetchone())['count'])
         elif mapping:
             async with self.api() as client:
                 for page in range(1, 21):
@@ -194,7 +202,8 @@ class Analytics:
                     if all(len(records[pool]) >= limit for pool in POOLS) or not items or page >= result.get('pages', page):
                         break
             more = {pool: len(records[pool]) >= limit for pool in POOLS}
-        return {'pools': {pool: {'items': records[pool], 'total': len(records[pool]), 'has_more': more[pool]} for pool in POOLS}}
+        return {'pools': {pool: {'items': records[pool], 'total': len(records[pool]), 'has_more': more[pool],
+                                 'overload_error_count': overload_error_counts[pool]} for pool in POOLS}}
 
     async def ranking(self):
         ranking = {int(a['id']): {'account_id': int(a['id']), 'account_name': a['name'],

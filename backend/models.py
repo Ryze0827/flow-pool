@@ -254,10 +254,6 @@ class AdminLogin2FA(BaseModel):
     totp_code: str = Field(pattern=r'^\d{6}$')
 
 
-class RateInspectionRequest(BaseModel):
-    emails: str = Field('', max_length=100000)
-
-
 class RateCorrectionRequest(BaseModel):
     inspection_id: str = Field(min_length=1, max_length=64)
     row_ids: list[str] = Field(min_length=1, max_length=10000)
