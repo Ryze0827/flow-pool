@@ -20,7 +20,6 @@ import RankingSidebar from './RankingSidebar.vue'
 const clone = value => JSON.parse(JSON.stringify(value))
 const nav = [
   { id: 'overview', name: '调度总览', icon: LayoutDashboard },
-  { id: 'accounts', name: '账号号池', icon: Layers3 },
   { id: 'usage', name: '账号调用记录', icon: ListFilter },
   { id: 'rates', name: '用户倍率巡检', icon: Gauge },
   { id: 'groups', name: '分组调控', icon: Zap },
@@ -33,8 +32,8 @@ const nav = [
 const pools = [{ id: 'priority', name: '高权重组', desc: '核心账号，稳定交付', icon: Zap, color: 'purple' }, { id: 'risk', name: '风控组', desc: '独立归档，持续观察', icon: ShieldCheck, color: 'teal' }, { id: 'third_party', name: '三方账号组', desc: '外部资源，统一管理', icon: Layers3, color: 'blue' }]
 const usagePools = [pools[1], pools[0], pools[2]]
 const needsDashboard = view => !['rates', 'groups', 'settings'].includes(view)
-const routePaths = { overview: '/overview', accounts: '/accounts', usage: '/usage', import: '/import', rates: '/rate-inspection', groups: '/group-control', rules: '/rules', events: '/events', mail: '/mail', invoices: '/invoices', settings: '/settings' }
-const pageFromPath = path => Object.entries(routePaths).find(([, route]) => route === path)?.[0] || 'overview'
+const routePaths = { overview: '/overview', usage: '/usage', import: '/import', rates: '/rate-inspection', groups: '/group-control', rules: '/rules', events: '/events', mail: '/mail', invoices: '/invoices', settings: '/settings' }
+const pageFromPath = path => path === '/accounts' ? 'overview' : Object.entries(routePaths).find(([, route]) => route === path)?.[0] || 'overview'
 const page = ref(pageFromPath(globalThis.location?.pathname || '/'))
 const auth = ref({ ready: false, configured: false, authenticated: false, username: '' })
 const authStatusError = ref('')
@@ -194,7 +193,7 @@ const scheduleLabel = account => {
   return availabilityIssue(account) || (account.error ? account.state === 'pausing' ? '暂缓停调' : '状态异常' : guardWarning(account) ? '告警 · 继续调度' : statuses[account.state])
 }
 const ratio = a => a.sample.length ? Math.round(a.slow_count / a.sample.length * 100) : 0
-const title = computed(() => ({ overview: '调度总览', accounts: '账号号池', usage: '账号调用记录', import: '快速上号', rates: '用户倍率巡检', rules: '调度规则', events: '操作日志', mail: '邮件通知', invoices: '发票管理', settings: '连接设置' }[page.value]))
+const title = computed(() => ({ overview: '调度总览', usage: '账号调用记录', import: '快速上号', rates: '用户倍率巡检', rules: '调度规则', events: '操作日志', mail: '邮件通知', invoices: '发票管理', settings: '连接设置' }[page.value]))
 
 function handleAuthExpired() {
   auth.value = { ...auth.value, authenticated: false }
@@ -203,6 +202,7 @@ function handleAuthExpired() {
 
 function handlePopState() {
   syncingRoute.value = true
+  if (globalThis.location.pathname === '/accounts') globalThis.history.replaceState({}, '', routePaths.overview)
   page.value = pageFromPath(globalThis.location.pathname)
   queueMicrotask(() => { syncingRoute.value = false })
 }
@@ -461,7 +461,7 @@ async function discardBatch(id) {
   await action(async () => { await api(`/import/${id}`, 'DELETE'); if (batch.value?.id === id) batch.value = null; historyRevision.value++; await refresh(); notify('已清除本地导入批次，上游账号保留') })
 }
 function sampleHeight(value) { return Math.max(5, Math.min(100, value / Math.max(settings.value.rule.threshold_ms * 2, ...currentDetail.value.sample.map(s => s.first_token_ms)) * 100)) }
-function viewPool(pool) { poolFilter.value = pool; page.value = 'accounts' }
+function viewPool(pool) { poolFilter.value = pool; page.value = 'overview' }
 function downloadExample() {
   const value = [{ platform: 'openai', email: 'account@example.com', credentials: { access_token: '替换为实际 access_token', refresh_token: '替换为实际 refresh_token', chatgpt_account_id: '替换为实际账号 ID' } }]
   const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }))
@@ -481,6 +481,7 @@ async function loadAuthStatus() {
 onMounted(async () => {
   window.addEventListener('flowpool-auth-expired', handleAuthExpired)
   globalThis.addEventListener('popstate', handlePopState)
+  if (globalThis.location.pathname === '/accounts') globalThis.history.replaceState({}, '', routePaths.overview)
   await loadAuthStatus()
   polling = setInterval(() => {
     if (needsDashboard(page.value)) void refresh()
@@ -503,7 +504,7 @@ onUnmounted(() => {
       <a href="#" class="brand" @click.prevent="page = 'overview'"><img class="brand-mark" src="/favicon.svg" alt="" width="40" height="40"/><span>FlowPool<small>GPT 账号调控</small></span></a>
       <SystemUpgrade :busy="busy || loginLoading"/>
       <div class="workspace-label">WORKSPACE <span>本地</span></div>
-      <nav aria-label="主导航"><button v-for="item in nav" :key="item.id" :class="['nav-item', { selected: page === item.id }]" @click="page = item.id"><component :is="item.icon" :size="18"/><span>{{ item.name }}</span><span v-if="item.id === 'accounts' && data.accounts.length" class="nav-count">{{ data.accounts.length }}</span></button></nav>
+      <nav aria-label="主导航"><button v-for="item in nav" :key="item.id" :class="['nav-item', { selected: page === item.id }]" @click="page = item.id"><component :is="item.icon" :size="18"/><span>{{ item.name }}</span></button></nav>
       <div class="sidebar-bottom"><div class="platform-card"><div class="platform-icon"><Sparkles :size="18"/></div><div><strong>GPT / OpenAI</strong><small>覆盖所有上游分组</small></div><span class="dot green"></span></div><button :class="['nav-item', { selected: page === 'settings' }]" @click="page = 'settings'"><Settings2 :size="18"/><span>连接设置</span><span v-if="data.configured" class="dot green"></span></button><button class="collapse-toggle" :aria-label="sidebarCollapsed ? '展开菜单' : '收起菜单'" @click="toggleSidebar"><ChevronRight :size="16"/><span>{{ sidebarCollapsed ? '展开菜单' : '收起菜单' }}</span></button><div class="sidebar-footer"><span>FlowPool <b>v1.0</b></span><span>LOCAL FIRST</span></div></div>
     </aside>
 
@@ -511,15 +512,15 @@ onUnmounted(() => {
       <header class="topbar"><div class="breadcrumb">工作空间<ChevronRight :size="13"/><strong>{{ title }}</strong></div><div class="topbar-right"><span class="connection"><span :class="['dot', data.configured ? 'green' : 'gray']"></span>{{ data.configured ? '服务已配置' : '等待连接' }}</span><span class="top-divider"></span><button class="avatar" title="连接设置" aria-label="打开连接设置" @click="page = 'settings'">管</button><span>{{ auth.username || '管理员' }}</span><button class="text-button" @click="logout"><LogOut :size="14"/>退出</button></div></header>
       <div class="main-content">
         <div v-if="loadError" class="notice error"><Unplug :size="17"/>{{ loadError }}<button class="text-button" @click="refresh">重试</button></div>
-        <div v-if="['overview', 'accounts', 'events'].includes(page)" class="page-actions"><template v-if="['overview', 'accounts'].includes(page)"><button class="button" :disabled="busy" @click="openEnroll"><Plus :size="16"/>录入已有账号</button><button class="button primary" @click="page = 'import'"><CloudUpload :size="16"/>快速上号</button></template><span v-else class="badge neutral">保留最近 10,000 条 · 展示 100 条</span></div>
+        <div v-if="['overview', 'events'].includes(page)" class="page-actions"><template v-if="page === 'overview'"><button class="button" :disabled="busy" @click="openEnroll"><Plus :size="16"/>录入已有账号</button><button class="button primary" @click="page = 'import'"><CloudUpload :size="16"/>快速上号</button></template><span v-else class="badge neutral">保留最近 10,000 条 · 展示 100 条</span></div>
 
         <template v-if="settings">
-          <template v-if="['overview', 'accounts'].includes(page)">
+          <template v-if="page === 'overview'">
             <div v-if="!data.configured" class="setup-banner"><div class="setup-icon"><Unplug :size="22"/></div><div><strong>连接 Sub2API，开启自动调度</strong><p>配置管理员 API Key 后，即可读取 GPT 账号、分组和调用记录。</p></div><button class="button" @click="page = 'settings'">配置连接<ArrowRight :size="15"/></button></div>
             <div v-if="page === 'overview'" class="stats-grid"><div class="stat-card"><div class="stat-label">托管账号 <Layers3 :size="17"/></div><div class="stat-value">{{ data.accounts.length }}<span>个</span></div><div class="stat-foot">覆盖 {{ new Set(data.accounts.flatMap(a => a.remote.groups.map(g => g.id))).size }} 个上游分组</div></div><div class="stat-card"><div class="stat-label">正常调度 <Zap :size="17" class="teal-text"/></div><div class="stat-value">{{ healthy }}<span>个</span></div><div class="stat-foot"><span class="dot green"></span>账号可调度且检查正常</div></div><div class="stat-card"><div class="stat-label">冷却暂停 <Clock3 :size="17" class="orange-text"/></div><div class="stat-value">{{ cooling }}<span>个</span></div><div class="stat-foot">冷却结束后自动恢复</div></div><div class="stat-card"><div class="stat-label">恢复观察 <ShieldCheck :size="17" class="purple-text"/></div><div class="stat-value">{{ watching }}<span>个</span></div><div class="stat-foot">只统计恢复后的调用</div></div><PerformanceMetrics/></div>
             <section class="panel rule-strip"><div class="rule-icon"><Activity :size="21"/></div><div class="rule-strip-content"><div class="inline"><strong>首字延迟守护</strong><span :class="['badge', settings.rule.enabled ? 'success' : 'neutral']">{{ settings.rule.enabled ? '自动调度已开启' : '自动调度未开启' }}</span><span v-if="settings.rule.alert_only" class="badge neutral">仅告警模式</span></div><p>守护范围：<b>{{ guardedPoolNames }}</b>。最近 <b>5 分钟</b> 内的最新 <b>{{ settings.rule.sample_size }}</b> 次有效调用，首字延迟 &gt; <b>{{ settings.rule.threshold_ms / 1000 }}s</b> 占比 ≥ <b>{{ Math.round(settings.rule.slow_ratio * 100) }}%</b> 计一次达限，<template v-if="settings.rule.alert_only">达到阈值后只记录告警并继续调度</template><template v-else><b>{{ settings.rule.breach_window_seconds }} 秒</b> 内累计 <b>{{ settings.rule.breach_count }} 次</b> 才停调；再次计次至少间隔 <b>{{ settings.rule.breach_min_interval_seconds }} 秒</b>、新增 <b>{{ Math.ceil(settings.rule.sample_size * settings.rule.breach_fresh_ratio) }} 条</b> 样本。每次冷却 <b>{{ settings.rule.cooldown_seconds / 60 }} 分钟</b>，恢复观察 <b>{{ settings.rule.probation_seconds }}s</b></template>。</p></div><button class="text-button" @click="page = 'rules'">配置规则<ChevronRight :size="15"/></button><button :class="['switch', { on: settings.rule.enabled }]" role="switch" :aria-checked="settings.rule.enabled" aria-label="自动调度开关" :disabled="busy" @click="toggleScheduler"><span></span></button></section>
             <div class="section-heading"><h2>我的号池 <span>仅在本地分类</span></h2><span class="muted small">{{ data.accounts.length }} 个已托管账号</span></div>
-            <div class="pool-grid"><button v-for="pool in pools" :key="pool.id" :class="['pool-card', pool.color, { chosen: page === 'accounts' && poolFilter === pool.id }]" @click="viewPool(pool.id)"><div class="pool-icon"><component :is="pool.icon" :size="20"/></div><div class="pool-text"><strong>{{ pool.name }}</strong><small>{{ pool.desc }}</small></div><div class="pool-count">{{ data.accounts.filter(a => a.pool === pool.id).length }}<ChevronRight :size="16"/></div></button></div>
+            <div class="pool-grid"><button v-for="pool in pools" :key="pool.id" :class="['pool-card', pool.color, { chosen: poolFilter === pool.id }]" @click="viewPool(pool.id)"><div class="pool-icon"><component :is="pool.icon" :size="20"/></div><div class="pool-text"><strong>{{ pool.name }}</strong><small>{{ pool.desc }}</small></div><div class="pool-count">{{ data.accounts.filter(a => a.pool === pool.id).length }}<ChevronRight :size="16"/></div></button></div>
             <section class="panel accounts-panel"><div class="panel-heading"><div><h2>账号列表 <span class="count-chip">{{ filtered.length }}</span></h2><p>实时状态与最近调用表现</p></div><button class="button" title="点击立即检查账号；页面按显示间隔自动刷新" :disabled="busy" @click="action(async () => { await api('/scheduler/tick', 'POST'); await refresh(); notify('本轮检查已完成') })"><RefreshCw :size="17" :class="{ spinning: busy }"/>立即检查 · {{ refreshIntervalSeconds }} 秒刷新</button></div>
               <div class="table-toolbar"><div class="tabs"><button :class="{ active: poolFilter === 'all' }" @click="poolFilter = 'all'">全部账号</button><button v-for="pool in pools" :key="pool.id" :class="{ active: poolFilter === pool.id }" @click="poolFilter = pool.id">{{ pool.name }}</button></div><div class="filters"><label class="search-input"><Search :size="15"/><input v-model="search" placeholder="搜索名称或 ID" aria-label="搜索本地账号" /></label><select v-model="stateFilter" aria-label="筛选调度状态"><option value="all">全部状态</option><option v-for="(label, value) in statuses" :key="value" :value="value">{{ label }}</option></select></div></div>
               <div class="table-scroll"><table><thead><tr><th>账号名称</th><th>本地号池</th><th>调度状态</th><th>账号风控</th><th>账号额度</th><th>状态说明</th><th>慢调用占比 / 达限次数</th><th>下一步 / 最近检查</th><th class="align-right">操作</th></tr></thead><tbody><tr v-for="account in filtered" :key="account.id"><td><button class="account-name" @click="detail = account.id"><span class="account-avatar">{{ account.name.charAt(0).toUpperCase() }}</span><span><strong>{{ account.name }}</strong><small>#{{ account.id }} · {{ account.remote.type }} · {{ account.remote.groups.map(g => g.name).join(' / ') || '未绑定分组' }}</small></span></button></td><td><span :class="['pool-tag', account.pool]">{{ poolName(account.pool) }}</span></td><td><span :class="['badge', account.error || availabilityIssue(account) || guardWarning(account) ? 'warning' : account.state]"><span class="dot"></span>{{ scheduleLabel(account) }}</span><small v-if="account.error" class="cell-error" :title="account.error">{{ account.error }}</small></td><td><label class="check-row"><input type="checkbox" :checked="isGuarded(account)" :disabled="busy || !isPoolGuarded(account.pool)" :title="isPoolGuarded(account.pool) ? '修改账号风控' : '请先将所属分组纳入守护'" :aria-label="`账号 ${account.id} 风控`" @change="setAccountGuard(account, $event)"/>{{ isGuarded(account) ? '开启' : '关闭' }}</label></td><td><AccountQuota :account="account" :now="now" /></td><td><span class="status-explain">{{ sampleStatus(account) }}</span><small v-if="account.pool === 'third_party' && account.relogin_count > 0" class="muted">{{ account.relogin_failures > 3 ? `自动重登 · 成功${account.relogin_count} 次，失败 ${account.relogin_failures} 次 · 需手动处理` : `自动重登 · 成功${account.relogin_count} 次，失败 ${account.relogin_failures || 0} 次` }}</small></td><td><div class="ratio-cell"><span>{{ account.sample.length ? ratio(account) + '%' : '—' }}</span><small>{{ account.slow_count }} / {{ account.sample.length }} 次</small></div><div class="progress-track"><span :style="{ width: ratio(account) + '%' }" :class="{ danger: ratio(account) >= settings.rule.slow_ratio * 100 }"></span></div><small v-if="isGuarded(account)" class="muted">窗口内达限 {{ breachCount(account) }} / {{ settings.rule.breach_count }} 次</small></td><td><span v-if="account.state === 'cooldown'" class="small orange-text">{{ cooldownText(account) }}</span><span v-else-if="account.state === 'probation'" class="small purple-text">{{ account.probation_until > now ? remaining(account.probation_until) + '后检查样本' : account.sample.length < settings.rule.sample_size ? `等待样本 ${account.sample.length}/${settings.rule.sample_size}` : '样本已齐，等待巡检' }}</span><span v-else class="muted small">最近 {{ lastCheckText(account) }}</span><small class="next-check">下一次 {{ nextCheckText(account) }}</small></td><td><div class="row-actions"><button class="icon-button" title="查看调用样本" aria-label="查看调用样本" @click="detail = account.id"><Activity :size="16"/></button><button v-if="['cooldown','manual'].includes(account.state) || account.remote.schedulable === false" class="icon-button" title="恢复调度" aria-label="恢复调度" :disabled="busy" @click="accountAction(account, 'resume')"><Play :size="16"/></button><button v-else class="icon-button" title="手动暂停" aria-label="手动暂停" :disabled="busy" @click="accountAction(account, 'pause')"><Pause :size="16"/></button><button class="icon-button" title="移出本地号池" aria-label="移出本地号池" :disabled="busy" @click="accountAction(account, 'remove')"><X :size="15"/></button></div></td></tr></tbody></table></div>
