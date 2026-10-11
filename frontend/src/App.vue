@@ -22,13 +22,13 @@ const nav = [
   { id: 'overview', name: '调度总览', icon: LayoutDashboard },
   { id: 'accounts', name: '账号号池', icon: Layers3 },
   { id: 'usage', name: '账号调用记录', icon: ListFilter },
-  { id: 'import', name: '快速上号', icon: CloudUpload },
   { id: 'rates', name: '用户倍率巡检', icon: Gauge },
   { id: 'groups', name: '分组调控', icon: Zap },
   { id: 'rules', name: '调度规则', icon: SlidersHorizontal },
   { id: 'events', name: '操作日志', icon: Activity },
   { id: 'mail', name: '邮件通知', icon: Mail },
-  { id: 'invoices', name: '发票管理', icon: FileJson }
+  { id: 'invoices', name: '发票管理', icon: FileJson },
+  { id: 'import', name: '快速上号', icon: CloudUpload }
 ]
 const pools = [{ id: 'priority', name: '高权重组', desc: '核心账号，稳定交付', icon: Zap, color: 'purple' }, { id: 'risk', name: '风控组', desc: '独立归档，持续观察', icon: ShieldCheck, color: 'teal' }, { id: 'third_party', name: '三方账号组', desc: '外部资源，统一管理', icon: Layers3, color: 'blue' }]
 const usagePools = [pools[1], pools[0], pools[2]]
