@@ -577,8 +577,9 @@ async def import_model_whitelist():
 
 @app.post('/api/import/login')
 async def import_login(value: LoginImport):
+    submitted_options = value.options.model_copy(deep=True)
     if value.batch_id:
-        importer.login_batch(value.batch_id, value.options)
+        importer.login_batch(value.batch_id, submitted_options)
     connection = store.settings()
     async with Sub2API(connection) as client:
         await importer.validate_options(client, value.options)
@@ -593,7 +594,7 @@ async def import_login(value: LoginImport):
         preview = Preview(payload=result['payload'], options=value.options)
         recovery = recovery_material(value, value.options)
         if value.batch_id:
-            return importer.append_login_preview(value.batch_id, preview, recovery)
+            return importer.append_login_preview(value.batch_id, preview, recovery, submitted_options)
         return importer.create_preview(preview, recovery, source='login')
 
 
@@ -706,6 +707,7 @@ async def import_relogin(batch_id: str, item_index: int, value: SavedRelogin | R
             updated['payload']['credentials'] = {**latest_credentials, **updated['payload']['credentials']}
             updated['recovery'] = recovery_material(value, options)
             updated['source'] = 'login'
+            batch['options'] = options.model_dump()
             batch['items'] = [updated if entry['index'] == item_index else entry for entry in batch['items']]
             # 账密随批次加密暂存，成功入池后移到账号恢复记录；推送失败可复用原导入重试。
             store.save_batch(batch)
@@ -723,6 +725,12 @@ async def import_commit(batch_id: str):
         if not batch:
             raise HTTPException(404, '导入批次不存在')
         async with Sub2API(store.settings()) as client:
+            if any(item['status'] not in {'done', 'skipped'} for item in batch['items']):
+                options = ImportOptions(**batch['options'])
+                await importer.validate_options(client, options)
+                if batch['options'] != options.model_dump():
+                    batch['options'] = options.model_dump()
+                    store.save_batch(batch)
             result = await importer.commit(client, batch)
         # 推送入池即开启自动监控，不要求用户再到规则页启用。
         if any(item['status'] == 'done' for item in result['items']):

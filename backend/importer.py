@@ -161,8 +161,10 @@ class Importer:
         if not options.group_ids:
             raise UpstreamError('至少选择一个 GPT 上游分组后再导入', 400)
         metadata = await client.metadata()
-        if not set(options.group_ids) <= {g['id'] for g in metadata['groups']}:
-            raise UpstreamError('所选分组不属于 GPT 平台或已不存在', 400)
+        valid_group_ids = {group['id'] for group in metadata['groups']}
+        options.group_ids = [group_id for group_id in options.group_ids if group_id in valid_group_ids]
+        if not options.group_ids:
+            raise UpstreamError('所选 GPT 分组均已失效，请至少保留一个当前有效的分组', 400)
         if options.proxy_id and options.proxy_id not in {p['id'] for p in metadata['proxies']}:
             raise UpstreamError('所选代理已不存在', 400)
 
@@ -185,8 +187,8 @@ class Importer:
             raise UpstreamError('单批最多 500 个账号', 400)
         return batch
 
-    def append_login_preview(self, batch_id, request, recovery=None):
-        batch = self.login_batch(batch_id, request.options)
+    def append_login_preview(self, batch_id, request, recovery=None, submitted_options=None):
+        batch = self.login_batch(batch_id, submitted_options or request.options)
         items = normalize(request.payload, request.options, start_index=len(batch['items']) + 1)
         names = {item['name'] for item in batch['items']}
         emails = {item['email'].lower() for item in batch['items'] if item['email']}
