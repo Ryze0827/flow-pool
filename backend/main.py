@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, GroupSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -568,13 +568,12 @@ async def account_action(account_id: int, action: str):
     return {'ok': True}
 
 
-@app.post('/api/accounts/group-scheduling')
-async def group_scheduling(value: GroupSchedulingRequest):
+@app.post('/api/accounts/pool-scheduling')
+async def pool_scheduling(value: PoolSchedulingRequest):
     async with scheduler.lock:
-        targets = [account for account in store.accounts()
-                   if any(group.get('id') == value.group_id for group in (account.get('remote') or {}).get('groups', []))]
+        targets = [account for account in store.accounts() if account['pool'] == value.pool]
         if not targets:
-            raise HTTPException(404, '该分组内没有已录入的账号')
+            raise HTTPException(404, '该号池内没有已录入的账号')
         results = []
         async with Sub2API(store.settings()) as client:
             for account in targets:
@@ -588,8 +587,8 @@ async def group_scheduling(value: GroupSchedulingRequest):
                 except Exception:
                     results.append({'id': account['id'], 'name': account['name'], 'ok': False, 'error': '操作失败，请稍后重试'})
         succeeded = sum(item['ok'] for item in results)
-        store.event('group_scheduling', f"分组 #{value.group_id} 批量{'开启' if value.enabled else '停止'}调度：成功 {succeeded} 个，失败 {len(results) - succeeded} 个")
-    return {'group_id': value.group_id, 'enabled': value.enabled, 'succeeded': succeeded,
+        store.event('pool_scheduling', f"{POOL_NAMES[value.pool]}批量{'开启' if value.enabled else '停止'}调度：成功 {succeeded} 个，失败 {len(results) - succeeded} 个")
+    return {'pool': value.pool, 'enabled': value.enabled, 'succeeded': succeeded,
             'failed': len(results) - succeeded, 'results': results}
 
 

@@ -40,8 +40,8 @@ class GuardUpdate(BaseModel):
     enabled: bool
 
 
-class GroupSchedulingRequest(BaseModel):
-    group_id: int = Field(strict=True, ge=1)
+class PoolSchedulingRequest(BaseModel):
+    pool: Pool
     enabled: bool = Field(strict=True)
 
 
