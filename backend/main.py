@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, GroupSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -529,6 +529,26 @@ async def pool_guard_put(pool: Pool, value: GuardUpdate):
     return {'guarded_pools': settings.rule.guarded_pools}
 
 
+async def _run_account_scheduling(account, enabled, client):
+    account_id = account['id']
+    if enabled:
+        remote = await client.account(account_id)
+        rule = store.settings().rule
+        if remote.get('status') != 'active':
+            raise HTTPException(409, '请先在 Sub2API 将账号状态恢复为 active')
+        if remote.get('auto_pause_on_expired', True) and remote.get('expires_at'):
+            if expiry_timestamp(remote['expires_at']) <= client.now():
+                raise HTTPException(409, '账号已到期，请先在 Sub2API 处理有效期')
+        reason = '手动结束冷却，立即恢复调度' if account['resume_at'] is not None else '手动恢复调度'
+        if account_guarded(account, rule):
+            reason += '，进入观察期'
+        store.update(account_id, remote=public_account(remote))
+        account = store.account(account_id)
+        await scheduler.resume(client, account, rule, reason, restore_groups=account['pool'] == 'third_party')
+    else:
+        await scheduler.pause(client, account, store.settings().rule, '手动暂停，需手动恢复', manual=True)
+
+
 @app.post('/api/accounts/{account_id}/{action}')
 async def account_action(account_id: int, action: str):
     if action not in {'pause', 'resume', 'remove'}:
@@ -544,24 +564,33 @@ async def account_action(account_id: int, action: str):
             store.event('remove', '已移出本地号池并结束托管，上游账号及调度状态保留；不再执行本地冷却恢复任务', account_id)
         else:
             async with Sub2API(store.settings()) as client:
-                remote = await client.account(account_id)
-                rule = store.settings().rule
-                if action == 'pause':
-                    await scheduler.pause(client, account, rule, '手动暂停，需手动恢复', manual=True)
-                else:
-                    if remote.get('status') != 'active':
-                        raise HTTPException(409, '请先在 Sub2API 将账号状态恢复为 active')
-                    if remote.get('auto_pause_on_expired', True) and remote.get('expires_at'):
-                        if expiry_timestamp(remote['expires_at']) <= client.now():
-                            raise HTTPException(409, '账号已到期，请先在 Sub2API 处理有效期')
-                    reason = '手动结束冷却，立即恢复调度' if account['resume_at'] is not None else '手动恢复调度'
-                    if account_guarded(account, rule):
-                        reason += '，进入观察期'
-                    # 手动恢复也使用实时分组识别生图冷却，兼容缺少模式标记的旧记录。
-                    store.update(account_id, remote=public_account(remote))
-                    account = store.account(account_id)
-                    await scheduler.resume(client, account, rule, reason, restore_groups=account['pool'] == 'third_party')
+                await _run_account_scheduling(account, action == 'resume', client)
     return {'ok': True}
+
+
+@app.post('/api/accounts/group-scheduling')
+async def group_scheduling(value: GroupSchedulingRequest):
+    async with scheduler.lock:
+        targets = [account for account in store.accounts()
+                   if any(group.get('id') == value.group_id for group in (account.get('remote') or {}).get('groups', []))]
+        if not targets:
+            raise HTTPException(404, '该分组内没有已录入的账号')
+        results = []
+        async with Sub2API(store.settings()) as client:
+            for account in targets:
+                try:
+                    await _run_account_scheduling(account, value.enabled, client)
+                    results.append({'id': account['id'], 'name': account['name'], 'ok': True, 'error': ''})
+                except HTTPException as error:
+                    results.append({'id': account['id'], 'name': account['name'], 'ok': False, 'error': str(error.detail)})
+                except UpstreamError as error:
+                    results.append({'id': account['id'], 'name': account['name'], 'ok': False, 'error': error.message})
+                except Exception:
+                    results.append({'id': account['id'], 'name': account['name'], 'ok': False, 'error': '操作失败，请稍后重试'})
+        succeeded = sum(item['ok'] for item in results)
+        store.event('group_scheduling', f"分组 #{value.group_id} 批量{'开启' if value.enabled else '停止'}调度：成功 {succeeded} 个，失败 {len(results) - succeeded} 个")
+    return {'group_id': value.group_id, 'enabled': value.enabled, 'succeeded': succeeded,
+            'failed': len(results) - succeeded, 'results': results}
 
 
 @app.post('/api/scheduler/tick')

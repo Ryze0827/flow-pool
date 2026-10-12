@@ -40,6 +40,11 @@ class GuardUpdate(BaseModel):
     enabled: bool
 
 
+class GroupSchedulingRequest(BaseModel):
+    group_id: int = Field(strict=True, ge=1)
+    enabled: bool = Field(strict=True)
+
+
 class MailSettings(BaseModel):
     enabled: bool = False
     smtp_host: str = Field('', max_length=253)
