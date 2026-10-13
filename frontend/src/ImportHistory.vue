@@ -81,12 +81,13 @@ onUnmounted(() => { mounted = false; requestId++; clearTimeout(timer); clearInte
   <section class="panel import-history" aria-labelledby="import-history-title">
     <div class="panel-heading"><div><h2 id="import-history-title">最近导入批次 <span class="count-chip">{{ total }}</span></h2><p>搜索全部历史账号，检查失效状态，快速重登入池</p></div><button class="button" :disabled="loading || !!checking" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新列表</button></div>
     <div class="history-toolbar"><label class="search-input"><Search :size="16"/><input v-model="search" maxlength="200" placeholder="搜索账号名称、邮箱或 ID" aria-label="搜索导入批次账号"/><button v-if="search" class="icon-button" aria-label="清空账号搜索" @click="search = ''"><X :size="14"/></button></label><label class="history-filter"><input v-model="onlyIssues" type="checkbox"/>仅展示需处理账号</label></div>
-    <p class="history-help">推送成功后自动观察 5 分钟，期间上游账号错误会使用已保存账密自动重登。暂停、停用、到期和限流不触发重登；无账密需手动处理。检查不发起模型调用。</p>
+    <details class="history-guide"><summary>入池后自动观察 5 分钟 <span>查看检查与重登说明</span></summary><p>推送成功后自动观察 5 分钟，期间上游账号错误会使用已保存账密自动重登。暂停、停用、到期和限流不触发重登；无账密需手动处理。检查不发起模型调用。</p></details>
     <p v-if="error" class="notice error history-error" role="alert">{{ error }}</p>
     <div v-if="!items.length" class="quiet-empty" role="status">{{ loading ? '正在读取批次…' : search ? '没有匹配的账号或批次' : '还没有导入批次' }}</div>
-    <article v-for="batch in items" :key="batch.id" class="history-batch">
+    <div class="history-batch-list">
+    <article v-for="batch in items" :key="batch.id" :class="['history-batch', { 'is-open': isOpen(batch) }]">
       <div class="history-batch-heading">
-        <button class="history-toggle" :aria-expanded="isOpen(batch)" :aria-controls="`history-${batch.id}`" @click="toggle(batch.id)"><ChevronDown v-if="isOpen(batch)" :size="17"/><ChevronRight v-else :size="17"/><span><strong>{{ timeText(batch.created_at) }} <span class="badge neutral">{{ pools[batch.pool] }}</span></strong><small>{{ batch.items.length }} 个账号 · 已入池 {{ batch.items.filter(item => item.status === 'done').length }} · 需处理 {{ issueCount(batch) }} · 未检查 {{ batch.items.filter(item => !item.health).length }}</small><small>最近检查：{{ timeText(checkedAt(batch)) }}</small></span></button>
+        <button class="history-toggle" :aria-expanded="isOpen(batch)" :aria-controls="`history-${batch.id}`" @click="toggle(batch.id)"><ChevronDown v-if="isOpen(batch)" :size="17"/><ChevronRight v-else :size="17"/><span><strong>{{ timeText(batch.created_at) }} <span class="badge neutral">{{ pools[batch.pool] }}</span></strong><small>批次 #{{ batch.id.slice(0, 8) }} · 最近检查 {{ timeText(checkedAt(batch)) }}</small></span><span class="history-summary"><span><b>{{ batch.items.length }}</b>账号</span><span class="summary-success"><b>{{ batch.items.filter(item => item.status === 'done').length }}</b>已入池</span><span v-if="issueCount(batch)" class="summary-warning"><b>{{ issueCount(batch) }}</b>需处理</span><span v-if="batch.items.some(item => !item.health)"><b>{{ batch.items.filter(item => !item.health).length }}</b>未检查</span></span></button>
         <div class="history-batch-actions"><button class="button" :disabled="busy || !!checking || !configured" @click="check(batch)"><RefreshCw v-if="checking === batch.id" :size="14" class="spinning"/><ShieldCheck v-else :size="14"/>{{ checking === batch.id ? '检查中…' : '检查整批' }}</button><button class="icon-button" :disabled="busy || !!checking" title="清除本地批次" aria-label="清除本地批次" @click="emit('discard', batch.id)"><X :size="16"/></button></div>
       </div>
       <div v-if="isOpen(batch)" :id="`history-${batch.id}`" class="history-batch-body">
@@ -102,6 +103,61 @@ onUnmounted(() => { mounted = false; requestId++; clearTimeout(timer); clearInte
         </tbody></table></div>
       </div>
     </article>
+    </div>
     <div class="table-footer history-pagination"><span>共 {{ total }} 个{{ search ? '匹配' : '' }}批次 · 第 {{ page }} / {{ pages }} 页</span><div><button class="button" :disabled="loading || page <= 1" @click="page--">上一页</button><button class="button" :disabled="loading || page >= pages" @click="page++">下一页</button></div></div>
   </section>
 </template>
+
+
+<style scoped>
+.history-toolbar { gap: 20px; padding-bottom: 14px; }
+.history-toolbar .search-input { flex: 0 1 560px; }
+.history-filter { margin-left: auto; }
+.history-guide { margin: 0 24px 20px; color: var(--muted); font-size: 13px; }
+.history-guide summary { cursor: pointer; width: fit-content; line-height: 1.8; }
+.history-guide summary span { margin-left: 12px; color: var(--accent); }
+.history-guide p { max-width: 850px; padding: 8px 14px; border-left: 2px solid var(--border); }
+.history-batch-list { padding: 0 20px 20px; display: grid; gap: 12px; background: linear-gradient(#fff, #f7f9fc); }
+.history-batch { border: 1px solid var(--border); border-radius: 10px; background: #fff; overflow: hidden; }
+.history-batch.is-open { border-color: #b9cee1; box-shadow: 0 3px 12px #29466008; }
+.history-batch-heading { padding: 18px 20px; gap: 24px; }
+.is-open .history-batch-heading { background: #f6f9fd; }
+.history-toggle { gap: 14px; }
+.history-toggle > svg { color: var(--muted); }
+.history-toggle > span:first-of-type { flex: 1; }
+.history-toggle strong { gap: 10px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.history-toggle small { font-size: 12px; margin-top: 8px; font-weight: 400; }
+.history-toggle .badge { font-size: 12px; padding: 4px 8px; }
+.history-summary { display: flex; align-items: center; gap: 24px; margin-left: auto; padding: 0 24px; border-left: 1px solid var(--border); }
+.history-summary > span { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; text-align: center; }
+.history-summary b { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.history-summary .summary-success b { color: var(--success); }
+.history-summary .summary-warning b { color: var(--warning); }
+.history-batch-actions { gap: 10px; }
+.history-batch-actions > .icon-button { color: var(--muted); }
+.history-batch-meta { background: #fff; border-top: 1px solid var(--border); border-bottom: 0; padding: 14px 20px; font-size: 12px; }
+.history-table th { background: #f8fafc; font-size: 12px; padding-top: 10px; padding-bottom: 10px; }
+.history-table td { padding-top: 18px; padding-bottom: 18px; }
+.history-table td strong { color: var(--text); }
+.history-table td small { font-size: 12px; line-height: 1.65; }
+.history-table td .purple-text { color: var(--purple); }
+.history-table td .orange-text { color: var(--warning); }
+.history-pagination { padding: 16px 24px; background: #fff; }
+@media (max-width: 1100px) {
+  .history-toggle { flex-wrap: wrap; }
+  .history-summary { width: 100%; border: 0; padding: 0 0 0 31px; margin: 4px 0 0; gap: 18px; }
+  .history-summary > span { flex-direction: row; align-items: baseline; gap: 5px; }
+  .history-summary b { font-size: 15px; }
+}
+@media (max-width: 600px) {
+  .history-toolbar { padding-inline: 16px; gap: 12px; }
+  .history-filter { margin-left: 0; }
+  .history-guide { margin-inline: 16px; }
+  .history-guide summary span { display: block; margin-left: 16px; }
+  .history-batch-list { padding-inline: 10px; }
+  .history-batch-heading { padding: 16px 12px; flex-wrap: wrap; gap: 14px; }
+  .history-toggle strong { font-size: 14px; }
+  .history-batch-actions { width: 100%; justify-content: flex-end; }
+  .history-batch-meta { gap: 8px; padding: 12px; }
+}
+</style>
