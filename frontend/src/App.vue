@@ -493,6 +493,8 @@ onMounted(async () => {
   globalThis.addEventListener('popstate', handlePopState)
   if (globalThis.location.pathname === '/accounts') globalThis.history.replaceState({}, '', routePaths.overview)
   await loadAuthStatus()
+  await nextTick()
+  if (page.value === 'usage') window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
   polling = setInterval(() => {
     if (needsDashboard(page.value)) void refresh()
     if (page.value === 'usage') void loadUsage()

@@ -605,12 +605,13 @@ async def import_model_whitelist():
 
 @app.post('/api/import/login')
 async def import_login(value: LoginImport):
-    submitted_options = value.options.model_copy(deep=True)
-    if value.batch_id:
-        importer.login_batch(value.batch_id, submitted_options)
     connection = store.settings()
     async with Sub2API(connection) as client:
         await importer.validate_options(client, value.options)
+    # 批次保存的是过滤失效分组后的参数，后续行也按相同规则校验再比较。
+    submitted_options = value.options.model_copy(deep=True)
+    if value.batch_id:
+        importer.login_batch(value.batch_id, submitted_options)
     result = await account_login.run(value)
     if isinstance(result, JSONResponse):
         return result

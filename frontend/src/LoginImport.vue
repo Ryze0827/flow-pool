@@ -47,6 +47,7 @@ async function login(retry = false) {
         })
         if (!mounted) break
         preview.value = result
+        savedOptions.value = JSON.parse(JSON.stringify(result.options))
         row.status = 'ready'
         row.password = ''; row.totp_secret = ''; row.workspaces = []
         row.message = '已加入待确认批次'
