@@ -24,8 +24,9 @@ if [[ ! -f data/requirements.installed ]] || ! cmp -s requirements.txt data/requ
   cp requirements.txt data/requirements.installed
 fi
 cd frontend
-if [[ ! -d node_modules ]] || [[ ! -f ../data/package.installed ]] || ! cmp -s package.json ../data/package.installed; then
+if [[ ! -d node_modules ]] || [[ ! -f ../data/package.installed ]] || ! cmp -s package.json ../data/package.installed || { [[ -f package-lock.json ]] && ! cmp -s package-lock.json ../data/package-lock.installed; }; then
   if [[ -f package-lock.json ]]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
   cp package.json ../data/package.installed
+  if [[ -f package-lock.json ]]; then cp package-lock.json ../data/package-lock.installed; fi
 fi
 npm run build

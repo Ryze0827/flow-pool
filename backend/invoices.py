@@ -191,6 +191,8 @@ class Invoices:
         orders = []
         for order_id in value.order_ids:
             order = await self.user_request(token, f'payment/orders/{order_id}')
+            if order.get('user_id') != user['id']:
+                raise HTTPException(404, '订单不存在')
             if not self.eligible(order) or self.occupied(order_id):
                 raise HTTPException(409, f'订单 #{order_id} 不可申请或已申请开票')
             orders.append({'id': order_id, 'amount': str(money(order['amount']))})
@@ -233,6 +235,8 @@ class Invoices:
             return self.get(invoice_id, user['id'])
 
     def update(self, invoice_id, **values):
+        if not values.keys() <= {'status', 'charge_status', 'note', 'reviewer_id'}:
+            raise ValueError('Invalid invoice fields')
         values['updated_at'] = time.time()
         with self.store.db:
             self.store.db.execute(f"UPDATE invoices SET {', '.join(key + '=?' for key in values)} WHERE id=?", (*values.values(), invoice_id))

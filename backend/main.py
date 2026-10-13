@@ -33,6 +33,7 @@ from .postgres import Sub2Postgres, resolve_postgres_settings
 from .analytics import Analytics
 from .performance import PerformanceMonitor
 from .model_catalog import OPENAI_MODELS
+from .security import RequestSecurityMiddleware
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('SCHEDULER_DATA_DIR', ROOT / 'data'))
@@ -101,7 +102,6 @@ async def lifespan(app):
 app = FastAPI(title='GPT 账号调控', lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(invoice_router(lambda: invoices))
 allowed_hosts = [item.strip() for item in os.environ.get('FLOWPOOL_ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1],testserver,fp.aiwxin.com').split(',') if item.strip()]
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 invoice_allowed_origins = [item.strip().rstrip('/') for item in os.environ.get('FLOWPOOL_INVOICE_ALLOWED_ORIGINS', 'https://aiwxin.com').split(',') if item.strip() and item.strip() != '*']
 
 
@@ -140,7 +140,12 @@ async def local_security(request: Request, call_next):
     if request.url.path.startswith('/api/') and request.method != 'GET':
         origin = request.headers.get('origin')
         allowed_invoice_origin = invoice_user_api and origin in invoice_allowed_origins
-        if (not invoice_user_api and request.headers.get('x-scheduler-request') != '1') or (origin and urlsplit(origin).netloc != request.headers.get('host') and not allowed_invoice_origin):
+        try:
+            same_origin = not origin or (urlsplit(origin).scheme == request.url.scheme and
+                                         urlsplit(origin).netloc == request.headers.get('host'))
+        except ValueError:
+            same_origin = False
+        if (not invoice_user_api and request.headers.get('x-scheduler-request') != '1') or (not same_origin and not allowed_invoice_origin):
             return reject('仅接受同源页面操作', 403)
         if request.url.path != '/api/upgrade' and (updater.locked(DATA) or (DATA / 'upgrade-deploying').exists()):
             return reject('系统升级中，请等待完成后再操作', 409)
@@ -153,19 +158,30 @@ async def local_security(request: Request, call_next):
         maximum = (5 if request.url.path.startswith('/api/invoices/') and request.url.path.endswith('/file') else 8) * 1024 * 1024
         if length > maximum:
             return reject(f'请求内容不能超过 {maximum // 1024 // 1024} MB', 413)
-        chunks, size = [], 0
-        async for chunk in request.stream():
-            size += len(chunk)
-            if size > maximum:
-                return reject(f'请求内容不能超过 {maximum // 1024 // 1024} MB', 413)
-            chunks.append(chunk)
+        async def read_body():
+            chunks, size = [], 0
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > maximum:
+                    return None
+                chunks.append(chunk)
+            return b''.join(chunks)
+        try:
+            body = await asyncio.wait_for(read_body(), timeout=30)
+        except asyncio.TimeoutError:
+            return reject('请求内容接收超时', 408)
+        if body is None:
+            return reject(f'请求内容不能超过 {maximum // 1024 // 1024} MB', 413)
         # Starlette's cached request replays this bounded body to call_next.
-        request._body = b''.join(chunks)
+        request._body = body
     return secured(await call_next(request))
 
 
+app.add_middleware(RequestSecurityMiddleware)
 app.add_middleware(InvoiceCORSMiddleware, allow_origins=invoice_allowed_origins,
                    allow_methods=['GET', 'POST'], allow_headers=['Authorization', 'Content-Type'])
+# 最后添加的中间件最先执行：无效 Host 不得触发鉴权、上游请求或读取请求体。
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts, www_redirect=False)
 
 
 @app.exception_handler(UpstreamError)
