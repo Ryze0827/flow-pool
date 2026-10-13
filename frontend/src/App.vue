@@ -434,13 +434,9 @@ async function reloginUpdated(result) {
   if (item?.status === 'done') notify(`${item.name} 已重新登录并推送入池`)
   await refresh()
 }
-async function useLoginBatch(preview) {
-  batch.value = preview
-  filePayload.value = null
-  fileName.value = ''
-  notify(`已准备 ${preview.items.length} 个账号，请核对后确认推送`)
-  await nextTick()
-  batchPanel.value?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+async function useLoginBatch(result) {
+  if (result.items.some(item => !['done', 'skipped'].includes(item.status))) batch.value = result
+  historyRevision.value++
   await refresh()
 }
 async function readFile(event) {

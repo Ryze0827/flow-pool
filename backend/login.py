@@ -44,7 +44,7 @@ ERRORS = {
 }
 
 
-class AccountLogin:
+class _LoginWorker:
     def __init__(self):
         self.lock = asyncio.Lock()
         self.process = None
@@ -124,3 +124,40 @@ class AccountLogin:
                 payload.clear()
                 await self.close()
                 self.process = None
+
+
+class AccountLogin:
+    """Bound concurrent login workers; each owns its process and remote task."""
+    def __init__(self):
+        self.slots = asyncio.Semaphore(3)
+        self.workers = set()
+        self.tasks = set()
+        self.lock = self
+        self.closed = False
+
+    def locked(self):
+        return bool(self.tasks)
+
+    async def run(self, value):
+        if self.closed:
+            raise UpstreamError('登录服务正在关闭，请稍后重试', 503)
+        task = asyncio.current_task()
+        self.tasks.add(task)
+        try:
+            async with self.slots:
+                worker = _LoginWorker()
+                self.workers.add(worker)
+                try:
+                    return await worker.run(value)
+                finally:
+                    await worker.close()
+                    self.workers.discard(worker)
+        finally:
+            self.tasks.discard(task)
+
+    async def close(self):
+        self.closed = True
+        tasks = list(self.tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
