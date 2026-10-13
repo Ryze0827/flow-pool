@@ -163,7 +163,7 @@ class Scheduler:
             await self.finish_image_pause(client, account, rule)
             return
         if state == 'pausing':
-            if account['resume_at'] is None:
+            if account['resume_at'] is None or account.get('cooldown_mode') == 'forced':
                 await self.finish_pause(client, account, rule)
                 return
             if remote.get('schedulable') is False:
@@ -448,7 +448,13 @@ class Scheduler:
     async def finish_pause(self, client, account, rule):
         automatic = account['resume_at'] is not None
         detail = ''
-        if automatic:
+        forced = account.get('cooldown_mode') == 'forced'
+        if automatic and forced and account['pool'] == 'third_party':
+            await client.cooldown_groups(image_only=True)
+            self.store.update(account['id'], cooldown_mode='image')
+            await self.finish_image_pause(client, self.store.account(account['id']), rule, migrated=True)
+            return
+        if automatic and not forced:
             if not account_guarded(account, rule) or not rule.enabled or rule.alert_only or len(self.window_breaches(account, rule)) < rule.breach_count:
                 state = 'active' if rule.alert_only else ('probation' if account['probation_until'] is not None else 'active')
                 reason = '仅告警模式，继续调度' if rule.alert_only else '当前窗口未满足停调条件，继续巡检'
@@ -483,7 +489,7 @@ class Scheduler:
                                        '停调未确认', f'{detail}；{error.message}，下轮重新检查并重试', rule=rule)
             raise
         self.complete_pause(account, rule, detail)
-        if automatic:
+        if automatic and not forced:
             # 只复核本次选定的保障账号，不在冷却期间重复拉起替补。
             await self.ensure_cooldown_coverage(client, self.store.account(account['id']), rule, replacement_id, ready_ids)
 

@@ -205,6 +205,24 @@ class Analytics:
         return {'pools': {pool: {'items': records[pool], 'total': len(records[pool]), 'has_more': more[pool],
                                  'overload_error_count': overload_error_counts[pool]} for pool in POOLS}}
 
+    async def overload_accounts(self, pool):
+        if not postgres_configured(self.store):
+            raise HTTPException(409, '请先配置 PostgreSQL')
+        accounts = {a['id']: a for a in self.store.accounts() if a['pool'] == pool}
+        if not accounts:
+            return {'items': []}
+        async with self.snapshot() as cursor:
+            await cursor.execute("""SELECT account_id, COUNT(*) AS count, MAX(created_at) AS last_at
+                FROM ops_error_logs WHERE account_id = ANY(%s::bigint[])
+                AND created_at >= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                AND created_at <= CURRENT_TIMESTAMP
+                AND error_body ILIKE %s
+                GROUP BY account_id ORDER BY count DESC, account_id""",
+                (list(accounts), '%Our servers are currently overloaded%'))
+            rows = records_json(await cursor.fetchall())
+        return {'items': [{**row, 'name': accounts[row['account_id']]['name'],
+                           'state': accounts[row['account_id']]['state']} for row in rows]}
+
     async def ranking(self):
         ranking = {int(a['id']): {'account_id': int(a['id']), 'account_name': a['name'],
                    'pool': a['pool'], 'state': a['state'], 'share': 0, 'last_created_at': None}

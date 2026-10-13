@@ -50,6 +50,29 @@ const usagePoolRecords = ref({ priority: [], risk: [], third_party: [] })
 const usagePoolErrorCounts = ref({ priority: null, risk: null, third_party: null })
 const usageTotal = ref(0)
 const usageActiveCounts = computed(() => Object.fromEntries(pools.map(pool => [pool.id, data.value.accounts.filter(account => account.pool === pool.id && ['active', 'probation'].includes(account.state) && account.remote?.schedulable === true && !availabilityIssue(account)).length])))
+const overloadPool = ref(null)
+const overloadItems = ref([])
+const overloadLoading = ref(false)
+const overloadError = ref('')
+async function showOverloads(pool) {
+  overloadPool.value = pool
+  overloadItems.value = []
+  overloadError.value = ''
+  overloadLoading.value = true
+  try {
+    const result = await api(`/usage/overload-accounts?pool=${pool}`)
+    if (overloadPool.value === pool) overloadItems.value = result.items
+  } catch (error) { overloadError.value = error.message }
+  finally { overloadLoading.value = false }
+}
+async function overloadAction(item, operation) {
+  await action(async () => {
+    await api(`/accounts/${item.account_id}/${operation}`, 'POST')
+    notify(operation === 'pause' ? '已停止调度，需手动恢复' : '已强制进入冷却，到期自动恢复')
+    await refresh()
+    if (overloadPool.value) await showOverloads(overloadPool.value)
+  })
+}
 const usageLoading = ref(false)
 const ranking = ref([])
 // 占比每 30 秒更新，状态始终取账号列表的最新快照，避免把本地 active 当成上游可用。
@@ -594,7 +617,7 @@ onUnmounted(() => {
             </div>
             <div v-if="!data.configured" class="empty-state"><Unplug :size="28"/><h3>请先连接 Sub2API</h3><p>配置管理员 API Key 后才能读取账号调用记录。</p><button class="button" @click="page = 'settings'">配置连接<ArrowRight :size="15"/></button></div>
             <div v-else class="usage-pool-grid">
-              <section v-for="pool in usagePools" :key="pool.id" :class="['usage-pool-card', pool.color]"><div class="usage-pool-heading"><div><h3>{{ pool.name }}</h3><small>{{ pool.desc }}</small><span class="usage-active-count"><span class="dot green"></span>正在调度中 <span class="usage-active-value">{{ usageActiveCounts[pool.id] || 0 }}</span> 个</span><span class="usage-overload-count" :title="'响应内容包含 Our servers are currently overloaded 的错误请求数'">最近 5 分钟过载错误 <template v-if="usagePoolErrorCounts[pool.id] === null">需配置 PostgreSQL</template><template v-else><span class="usage-overload-value">{{ usagePoolErrorCounts[pool.id] }}</span> 次</template></span></div><span class="count-chip">{{ usagePoolRecords[pool.id]?.length || 0 }} 条记录</span></div><div class="usage-records-scroll"><table class="usage-table" :class="{ 'usage-table-expanded': settings.usage_visible_columns.length > 0 }"><thead><tr><th>账号</th><th v-if="isUsageColumnVisible('model')">模型</th><th v-if="isUsageColumnVisible('reasoning_effort')">推理强度</th><th v-if="isUsageColumnVisible('group')">分组</th><th>延迟</th><th>时间</th></tr></thead><tbody><tr v-for="record in usagePoolRecords[pool.id]" :key="record.id"><td><strong>{{ record.account_name || '未命名账号' }}</strong></td><td v-if="isUsageColumnVisible('model')">{{ record.model || '—' }}</td><td v-if="isUsageColumnVisible('reasoning_effort')"><span class="reasoning-tag">{{ record.reasoning_effort || '—' }}</span></td><td v-if="isUsageColumnVisible('group')"><span class="pool-tag">{{ record.group_name || '未分组' }}</span></td><td><div class="latency-cell"><span :class="{ 'slow-latency': record.first_token_ms > settings.rule.threshold_ms }">首字 {{ latencyText(record.first_token_ms) }}</span><small>总耗时 {{ latencyText(record.duration_ms) }}</small></div></td><td class="muted small">{{ usageTimeText(record.created_at) }}</td></tr></tbody></table><div v-if="!usagePoolRecords[pool.id]?.length" class="usage-pool-empty">暂无调用记录</div></div></section>
+              <section v-for="pool in usagePools" :key="pool.id" :class="['usage-pool-card', pool.color]"><div class="usage-pool-heading"><div><h3>{{ pool.name }}</h3><small>{{ pool.desc }}</small><span class="usage-active-count"><span class="dot green"></span>正在调度中 <span class="usage-active-value">{{ usageActiveCounts[pool.id] || 0 }}</span> 个</span><span class="usage-overload-count" :title="'响应内容包含 Our servers are currently overloaded 的错误请求数'">最近 5 分钟过载错误 <template v-if="usagePoolErrorCounts[pool.id] === null">需配置 PostgreSQL</template><template v-else><button class="text-button usage-overload-value" :aria-label="`查看${pool.name}最近 5 分钟过载账号`" @click="showOverloads(pool.id)">{{ usagePoolErrorCounts[pool.id] }}</button> 次</template></span></div><span class="count-chip">{{ usagePoolRecords[pool.id]?.length || 0 }} 条记录</span></div><div class="usage-records-scroll"><table class="usage-table" :class="{ 'usage-table-expanded': settings.usage_visible_columns.length > 0 }"><thead><tr><th>账号</th><th v-if="isUsageColumnVisible('model')">模型</th><th v-if="isUsageColumnVisible('reasoning_effort')">推理强度</th><th v-if="isUsageColumnVisible('group')">分组</th><th>延迟</th><th>时间</th></tr></thead><tbody><tr v-for="record in usagePoolRecords[pool.id]" :key="record.id"><td><strong>{{ record.account_name || '未命名账号' }}</strong></td><td v-if="isUsageColumnVisible('model')">{{ record.model || '—' }}</td><td v-if="isUsageColumnVisible('reasoning_effort')"><span class="reasoning-tag">{{ record.reasoning_effort || '—' }}</span></td><td v-if="isUsageColumnVisible('group')"><span class="pool-tag">{{ record.group_name || '未分组' }}</span></td><td><div class="latency-cell"><span :class="{ 'slow-latency': record.first_token_ms > settings.rule.threshold_ms }">首字 {{ latencyText(record.first_token_ms) }}</span><small>总耗时 {{ latencyText(record.duration_ms) }}</small></div></td><td class="muted small">{{ usageTimeText(record.created_at) }}</td></tr></tbody></table><div v-if="!usagePoolRecords[pool.id]?.length" class="usage-pool-empty">暂无调用记录</div></div></section>
             </div>
           </section>
         </template>
@@ -603,6 +626,19 @@ onUnmounted(() => {
       </div>
     </main>
     <RankingSidebar v-if="settings && needsDashboard(page)" :accounts="rankingAccounts" :sample-size="rankingSampleSize" :refresh-text="rankingRefreshText"/>
+
+    <div v-if="overloadPool" class="modal-overlay" @click.self="!busy && (overloadPool = null)">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="overload-title">
+        <div class="modal-heading"><div><h2 id="overload-title">{{ poolName(overloadPool) }} · 过载账号</h2><p>最近 5 分钟出现过过载错误的托管账号</p></div><button class="icon-button" :disabled="busy" aria-label="关闭过载账号" @click="overloadPool = null"><X :size="20"/></button></div>
+        <div class="modal-body">
+          <p class="small muted">停止调度后需手动恢复。强制冷却跳过阈值和替补检查，持续 {{ settings.rule.cooldown_seconds / 60 }} 分钟后自动恢复；三方组冷却期间仅保留生图调度。</p>
+          <p v-if="overloadError" class="notice error" role="alert">{{ overloadError }}</p>
+          <p v-if="overloadLoading" class="quiet-empty" role="status">正在读取过载账号…</p>
+          <div v-else-if="overloadItems.length" class="table-scroll"><table><thead><tr><th>账号</th><th>过载次数 / 最近时间</th><th>调度状态</th><th>操作</th></tr></thead><tbody><tr v-for="item in overloadItems" :key="item.account_id"><td>{{ item.name }}<small class="muted">#{{ item.account_id }}</small></td><td>{{ item.count }} 次<small class="muted">{{ usageTimeText(item.last_at) }}</small></td><td>{{ statuses[item.state] || item.state }}</td><td><div class="inline"><button class="button" :disabled="busy" @click="overloadAction(item, 'pause')"><Pause :size="14"/>停止调度</button><button class="button" :disabled="busy" @click="overloadAction(item, 'cooldown')"><Clock3 :size="14"/>强制冷却</button></div></td></tr></tbody></table></div>
+          <p v-else-if="!overloadError" class="quiet-empty">最近 5 分钟没有过载账号。</p>
+        </div>
+      </section>
+    </div>
 
     <ReloginAccount v-if="page === 'import' && relogin" :batch="relogin.batch" :item="relogin.item" :source="relogin.source" @close="relogin = null" @loading="loginLoading = $event" @updated="reloginUpdated"/>
 

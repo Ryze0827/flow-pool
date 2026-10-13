@@ -487,6 +487,11 @@ async def usage_pools(limit: int = 15):
     return await Analytics(store).pools(max(1, min(limit, 50)))
 
 
+@app.get('/api/usage/overload-accounts')
+async def overload_accounts(pool: Pool):
+    return await Analytics(store).overload_accounts(pool)
+
+
 @app.get('/api/usage/ranking')
 async def usage_ranking():
     return await Analytics(store).ranking()
@@ -605,7 +610,7 @@ async def _run_account_scheduling(account, enabled, client):
 
 @app.post('/api/accounts/{account_id}/{action}')
 async def account_action(account_id: int, action: str):
-    if action not in {'pause', 'resume', 'remove'}:
+    if action not in {'pause', 'resume', 'remove', 'cooldown'}:
         raise HTTPException(404, '未知操作')
     async with scheduler.lock:
         account = store.account(account_id)
@@ -618,7 +623,20 @@ async def account_action(account_id: int, action: str):
             store.event('remove', '已移出本地号池并结束托管，上游账号及调度状态保留；不再执行本地冷却恢复任务', account_id)
         else:
             async with Sub2API(store.settings()) as client:
-                await _run_account_scheduling(account, action == 'resume', client)
+                if action == 'cooldown':
+                    rule = store.settings().rule
+                    remote = await client.account(account_id)
+                    if remote.get('status') != 'active':
+                        raise HTTPException(409, '上游账号非 active，无法进入冷却')
+                    if account['pool'] == 'third_party':
+                        await client.cooldown_groups(image_only=True)
+                    store.update(account_id, state='pausing', cooldown_mode='forced',
+                                 remote=public_account(remote), post_import_until=None,
+                                 resume_at=time.time() + rule.cooldown_seconds,
+                                 cooldown_replacement_id=None, reason='手动强制进入冷却')
+                    await scheduler.finish_pause(client, store.account(account_id), rule)
+                else:
+                    await _run_account_scheduling(account, action == 'resume', client)
     return {'ok': True}
 
 
