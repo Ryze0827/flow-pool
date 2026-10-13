@@ -197,7 +197,7 @@ const scheduleLabel = account => {
   return availabilityIssue(account) || (account.error ? account.state === 'pausing' ? '暂缓停调' : '状态异常' : guardWarning(account) ? '告警 · 继续调度' : statuses[account.state])
 }
 const ratio = a => a.sample.length ? Math.round(a.slow_count / a.sample.length * 100) : 0
-const title = computed(() => ({ overview: '调度总览', usage: '账号调用记录', import: '快速上号', rates: '用户倍率巡检', rules: '调度规则', events: '操作日志', mail: '邮件通知', invoices: '发票管理', settings: '连接设置' }[page.value]))
+const title = computed(() => ({ overview: '调度总览', usage: '账号调用记录', import: '快速上号', rates: '用户倍率巡检', groups: '分组调控', plaza: '模型广场', rules: '调度规则', events: '操作日志', mail: '邮件通知', invoices: '发票管理', settings: '连接设置' }[page.value]))
 
 function handleAuthExpired() {
   auth.value = { ...auth.value, authenticated: false }
