@@ -657,6 +657,14 @@ async def import_model_whitelist():
     return {'models': list(OPENAI_MODELS)}
 
 
+@app.post('/api/import/login-batch')
+async def import_login_batch(value: ImportOptions):
+    async with scheduler.lock:
+        async with Sub2API(store.settings()) as client:
+            await importer.validate_options(client, value)
+        return importer.create_login_batch(value)
+
+
 @app.post('/api/import/login')
 async def import_login(value: LoginImport):
     connection = store.settings()
@@ -802,11 +810,13 @@ async def import_relogin(batch_id: str, item_index: int, value: SavedRelogin | R
 
 
 @app.post('/api/import/{batch_id}/commit')
-async def import_commit(batch_id: str):
+async def import_commit(batch_id: str, item_index: int | None = Query(None, ge=1)):
     async with scheduler.lock:
         batch = store.batch(batch_id)
         if not batch:
             raise HTTPException(404, '导入批次不存在')
+        if item_index is not None and not any(item['index'] == item_index for item in batch['items']):
+            raise HTTPException(404, '批次内账号不存在')
         async with Sub2API(store.settings()) as client:
             if any(item['status'] not in {'done', 'skipped'} for item in batch['items']):
                 options = ImportOptions(**batch['options'])
@@ -814,7 +824,7 @@ async def import_commit(batch_id: str):
                 if batch['options'] != options.model_dump():
                     batch['options'] = options.model_dump()
                     store.save_batch(batch)
-            result = await importer.commit(client, batch)
+            result = await importer.commit(client, batch, item_index=item_index)
         # 推送入池即开启自动监控，不要求用户再到规则页启用。
         if any(item['status'] == 'done' for item in result['items']):
             settings = store.settings()

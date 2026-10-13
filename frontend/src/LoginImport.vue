@@ -12,6 +12,7 @@ const rows = ref([])
 const loading = ref(false)
 const error = ref('')
 const savedOptions = ref(null)
+const batchId = ref(null)
 const provider = ref('session_studio')
 const savedProvider = ref('session_studio')
 const successCount = computed(() => rows.value.filter(row => ['done', 'skipped'].includes(row.status)).length)
@@ -26,6 +27,7 @@ async function login(retry = false) {
   if (!retry) {
     try { rows.value = parseLoginRows(quickSource.value) } catch (failure) { error.value = failure.message; return }
     savedOptions.value = JSON.parse(JSON.stringify(props.options))
+    batchId.value = null
     savedProvider.value = provider.value
     submittedSource.value = quickSource.value
     emit('started')
@@ -35,6 +37,11 @@ async function login(retry = false) {
   loading.value = true
   emit('loading', true)
   try {
+    if (!batchId.value) {
+      const batch = await api('/import/login-batch', 'POST', savedOptions.value)
+      batchId.value = batch.id
+      savedOptions.value = JSON.parse(JSON.stringify(batch.options))
+    }
     let next = 0
     async function worker() {
       while (mounted && next < pending.length) {
@@ -44,14 +51,17 @@ async function login(retry = false) {
           if (!row.batchId) {
             const result = await api('/import/login', 'POST', {
               email: row.email, password: row.password, totp_secret: row.totp_secret, workspace_id: row.workspace_id,
-              options: savedOptions.value, provider: savedProvider.value
+              options: savedOptions.value, provider: savedProvider.value, batch_id: batchId.value
             })
+            const item = result.items.find(item => item.email?.toLowerCase() === row.email.toLowerCase())
+            if (!item) throw new Error('批次中未找到该账号，请刷新导入历史核对')
+            row.itemIndex = item.index
             row.batchId = result.id
             row.password = ''; row.totp_secret = ''; row.workspaces = []
           }
           row.status = 'pushing'
-          const result = await api(`/import/${row.batchId}/commit`, 'POST')
-          const item = result.items[0]
+          const result = await api(`/import/${row.batchId}/commit?item_index=${row.itemIndex}`, 'POST')
+          const item = result.items.find(item => item.index === row.itemIndex)
           row.status = item?.status === 'done' ? 'done' : item?.status === 'skipped' ? 'skipped' : 'failed'
           row.message = item?.message || labels[row.status]
           if (mounted) emit('prepared', result)
@@ -64,6 +74,9 @@ async function login(retry = false) {
     }
     await Promise.all(Array.from({ length: Math.min(3, pending.length) }, worker))
 
+  } catch (failure) {
+    error.value = failure.message
+    pending.forEach(row => { if (row.status === 'waiting') row.status = 'failed' })
   } finally {
     loading.value = false
     if (mounted) {

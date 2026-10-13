@@ -177,11 +177,17 @@ class Importer:
         self.store.save_batch(batch)
         return public_batch(batch)
 
+    def create_login_batch(self, options):
+        batch = {'id': str(uuid.uuid4()), 'created_at': time.time(),
+                 'options': options.model_dump(), 'items': [], 'parallel_login': True}
+        self.store.save_batch(batch)
+        return public_batch(batch)
+
     def login_batch(self, batch_id, options):
         batch = self.store.batch(batch_id)
         if not batch:
             raise UpstreamError('待确认批次不存在，请重新开始导入', 409)
-        if ImportOptions(**batch['options']).model_dump() != options.model_dump() or any(item['status'] != 'pending' for item in batch['items']):
+        if ImportOptions(**batch['options']).model_dump() != options.model_dump() or (not batch.get('parallel_login') and any(item['status'] != 'pending' for item in batch['items'])):
             raise UpstreamError('批次已推送或参数发生变化，请重新开始导入', 409)
         if len(batch['items']) >= 500:
             raise UpstreamError('单批最多 500 个账号', 400)
