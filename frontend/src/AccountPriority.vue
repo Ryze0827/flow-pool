@@ -53,9 +53,9 @@ function finishEditing() {
 </template>
 
 <style scoped>
-.priority-control { display: inline-flex; align-items: center; width: 110px; height: 34px; border: 1px solid var(--border); border-radius: 9px; background: #f8fafc; overflow: hidden; }
+.priority-control { display: inline-flex; align-items: center; width: 96px; height: 34px; border: 1px solid var(--border); border-radius: 9px; background: #f8fafc; overflow: hidden; }
 .priority-control:focus-within { border-color: #73afc3; box-shadow: 0 0 0 3px #5baec212; }
-.priority-control button { display: grid; place-items: center; flex: 0 0 28px; height: 100%; border: 0; padding: 0; background: transparent; color: var(--muted); }
+.priority-control button { display: grid; place-items: center; flex: 0 0 22px; height: 100%; border: 0; padding: 0; background: transparent; color: var(--muted); }
 .priority-control button:hover:not(:disabled) { background: #edf1f6; color: var(--accent); }
 .priority-control button:disabled { color: #bdc6d2; }
 .priority-control input { width: 0; min-width: 0; flex: 1; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; appearance: textfield; -moz-appearance: textfield; }
