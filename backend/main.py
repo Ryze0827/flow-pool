@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, PriorityUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -508,6 +508,24 @@ async def account_guard_put(account_id: int, value: GuardUpdate):
         store.set_guard(account_id, value.enabled)
         store.event('guard', '账号风控已' + ('开启' if value.enabled else '关闭'), account_id)
     return {'ok': True}
+
+
+@app.put('/api/accounts/{account_id}/priority')
+async def account_priority_put(account_id: int, value: PriorityUpdate):
+    async with scheduler.lock:
+        if not store.account(account_id):
+            raise HTTPException(404, '账号未录入本地号池')
+        async with Sub2API(store.settings()) as client:
+            remote = await client.account(account_id)
+            previous = remote.get('priority')
+            if previous != value.priority:
+                await client.request('PUT', f'accounts/{account_id}', json={'priority': value.priority})
+                remote = await client.account(account_id)
+                if remote.get('priority') != value.priority:
+                    raise UpstreamError('上游优先级更新尚未确认，请刷新后重试', 409)
+                store.event('priority', f'账号优先级从 {previous} 调整为 {value.priority}', account_id)
+            store.update(account_id, remote=public_account(remote))
+    return {'account_id': account_id, 'priority': remote['priority']}
 
 
 @app.put('/api/pools/{pool}/guard')

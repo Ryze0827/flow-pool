@@ -40,6 +40,10 @@ class GuardUpdate(BaseModel):
     enabled: bool
 
 
+class PriorityUpdate(BaseModel):
+    priority: int = Field(strict=True, ge=0, le=10000)
+
+
 class PoolSchedulingRequest(BaseModel):
     pool: Pool
     enabled: bool = Field(strict=True)
