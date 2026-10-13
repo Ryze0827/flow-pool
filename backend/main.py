@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, PriorityUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -544,6 +544,24 @@ async def account_priority_put(account_id: int, value: PriorityUpdate):
                 store.event('priority', f'账号优先级从 {previous} 调整为 {value.priority}', account_id)
             store.update(account_id, remote=public_account(remote))
     return {'account_id': account_id, 'priority': remote['priority']}
+
+
+@app.put('/api/accounts/{account_id}/concurrency')
+async def account_concurrency_put(account_id: int, value: ConcurrencyUpdate):
+    async with scheduler.lock:
+        if not store.account(account_id):
+            raise HTTPException(404, '账号未录入本地号池')
+        async with Sub2API(store.settings()) as client:
+            remote = await client.account(account_id)
+            previous = remote.get('concurrency')
+            if previous != value.concurrency:
+                await client.request('PUT', f'accounts/{account_id}', json={'concurrency': value.concurrency})
+                remote = await client.account(account_id)
+                if remote.get('concurrency') != value.concurrency:
+                    raise UpstreamError('上游并发更新尚未确认，请刷新后重试', 409)
+                store.event('concurrency', f'账号并发从 {previous} 调整为 {value.concurrency}', account_id)
+            store.update(account_id, remote=public_account(remote))
+    return {'account_id': account_id, 'concurrency': remote['concurrency']}
 
 
 @app.put('/api/pools/{pool}/guard')

@@ -40,6 +40,10 @@ class GuardUpdate(BaseModel):
     enabled: bool
 
 
+class ConcurrencyUpdate(BaseModel):
+    concurrency: int = Field(strict=True, ge=1, le=1000)
+
+
 class PriorityUpdate(BaseModel):
     priority: int = Field(strict=True, ge=0, le=10000)
 
