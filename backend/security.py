@@ -63,7 +63,7 @@ class RequestSecurityMiddleware:
         budget = None
         if path in {'/api/auth/login', '/api/auth/login/2fa'}:
             budget = self.login_budget
-        elif path in {'/api/auth/status', '/api/auth/public-settings', '/api/auth/logout'} or path.startswith('/api/invoice-user/'):
+        elif path in {'/api/auth/status', '/api/auth/public-settings', '/api/auth/logout'} or path.startswith(('/api/invoice-user/', '/api/model-plaza-user/')):
             budget = self.lookup_budget
         if budget and scope['method'] != 'OPTIONS':
             # 仅使用 ASGI 提供的客户端地址，不自行信任 X-Forwarded-For。

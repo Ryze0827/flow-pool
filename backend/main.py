@@ -33,6 +33,7 @@ from .postgres import Sub2Postgres, resolve_postgres_settings
 from .analytics import Analytics
 from .performance import PerformanceMonitor
 from .model_catalog import OPENAI_MODELS
+from .model_plaza import plaza_router
 from .security import RequestSecurityMiddleware
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -101,6 +102,7 @@ async def lifespan(app):
 
 app = FastAPI(title='GPT 账号调控', lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(invoice_router(lambda: invoices))
+app.include_router(plaza_router(lambda: store, lambda: invoices))
 allowed_hosts = [item.strip() for item in os.environ.get('FLOWPOOL_ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1],testserver,fp.aiwxin.com').split(',') if item.strip()]
 invoice_allowed_origins = [item.strip().rstrip('/') for item in os.environ.get('FLOWPOOL_INVOICE_ALLOWED_ORIGINS', 'https://aiwxin.com').split(',') if item.strip() and item.strip() != '*']
 
@@ -119,7 +121,7 @@ async def local_security(request: Request, call_next):
         return secured(JSONResponse({'detail': message}, status_code=status))
 
     public_api = {'/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/login/2fa', '/api/auth/public-settings', '/api/auth/logout'}
-    invoice_user_api = request.url.path.startswith('/api/invoice-user/')
+    invoice_user_api = request.url.path.startswith(('/api/invoice-user/', '/api/model-plaza-user/'))
     if invoice_user_api:
         if not request.headers.get('authorization', '').lower().startswith('bearer '):
             return reject('请先登录', 401)

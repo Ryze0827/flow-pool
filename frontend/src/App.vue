@@ -14,6 +14,7 @@ import SystemUpgrade from './SystemUpgrade.vue'
 import AdminLogin from './AdminLogin.vue'
 import RateInspection from './RateInspection.vue'
 import GroupControl from './GroupControl.vue'
+import ModelPlazaSettings from './ModelPlazaSettings.vue'
 import PostgresSettings from './PostgresSettings.vue'
 import PerformanceMetrics from './PerformanceMetrics.vue'
 import RankingSidebar from './RankingSidebar.vue'
@@ -24,6 +25,7 @@ const nav = [
   { id: 'usage', name: '账号调用记录', icon: ListFilter },
   { id: 'rates', name: '用户倍率巡检', icon: Gauge },
   { id: 'groups', name: '分组调控', icon: Zap },
+  { id: 'plaza', name: '模型广场', icon: Layers3 },
   { id: 'rules', name: '调度规则', icon: SlidersHorizontal },
   { id: 'events', name: '操作日志', icon: Activity },
   { id: 'mail', name: '邮件通知', icon: Mail },
@@ -32,8 +34,8 @@ const nav = [
 ]
 const pools = [{ id: 'priority', name: '高权重组', desc: '核心账号，稳定交付', icon: Zap, color: 'purple' }, { id: 'risk', name: '风控组', desc: '独立归档，持续观察', icon: ShieldCheck, color: 'teal' }, { id: 'third_party', name: '三方账号组', desc: '外部资源，统一管理', icon: Layers3, color: 'blue' }]
 const usagePools = [pools[1], pools[0], pools[2]]
-const needsDashboard = view => !['rates', 'groups', 'settings'].includes(view)
-const routePaths = { overview: '/overview', usage: '/usage', import: '/import', rates: '/rate-inspection', groups: '/group-control', rules: '/rules', events: '/events', mail: '/mail', invoices: '/invoices', settings: '/settings' }
+const needsDashboard = view => !['rates', 'groups', 'plaza', 'settings'].includes(view)
+const routePaths = { overview: '/overview', usage: '/usage', import: '/import', rates: '/rate-inspection', groups: '/group-control', plaza: '/model-plaza', rules: '/rules', events: '/events', mail: '/mail', invoices: '/invoices', settings: '/settings' }
 const pageFromPath = path => path === '/accounts' ? 'overview' : Object.entries(routePaths).find(([, route]) => route === path)?.[0] || 'overview'
 const page = ref(pageFromPath(globalThis.location?.pathname || '/'))
 const auth = ref({ ready: false, configured: false, authenticated: false, username: '' })
@@ -579,6 +581,7 @@ onUnmounted(() => {
 
           <RateInspection v-if="page === 'rates'" @notify="notify"/>
           <GroupControl v-if="page === 'groups'" @notify="notify"/>
+          <ModelPlazaSettings v-if="page === 'plaza'" @notify="notify"/>
           <MailNotifications v-if="page === 'mail'" @notify="notify"/>
           <InvoiceManagement v-if="page === 'invoices'" @notify="notify"/>
               <section v-if="page === 'events'" class="panel"><div class="panel-heading"><h2>调度与操作记录</h2><button class="button" @click="refresh"><RefreshCw :size="15"/>刷新 · 每 {{ refreshIntervalSeconds }} 秒</button></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>级别</th><th>账号</th><th>操作</th><th>详情</th></tr></thead><tbody><tr v-for="event in data.events" :key="event.id"><td class="muted small">{{ timeText(event.created_at) }}</td><td><span :class="['badge', event.level === 'info' ? 'success' : 'warning']">{{ { info: '信息', warning: '提醒', error: '异常' }[event.level] }}</span></td><td>{{ event.account_id ? '#' + event.account_id : '系统' }}</td><td>{{ { settings: '更新设置', guard: '风控设置', priority: '调整优先级', rpm_alert: 'RPM 增长告警', rate_correction: '用户倍率纠正', rate_rules: '充值档位规则', group_openai_fast: '分组 OpenAI Fast', pool_scheduling: '号池批量启停调度', postgres_settings: '数据库连接设置', mail_settings: '邮件配置', mail_error: '邮件异常', auto_relogin: '自动重登', auto_relogin_error: '自动重登失败', image_cooldown: '冷却 · 仅生图调度', pause: '暂停调度', resume: '恢复调度', healthy: '观察通过', replacement: '启用替补调度', enroll: '录入号池', remove: '移出号池', import: '推送账号', import_observation: '入池观察', upstream_error: '接口异常', worker_error: '调度异常' }[event.action] || event.action }}</td><td>{{ event.message }}</td></tr></tbody></table></div><div v-if="!data.events.length" class="empty-state"><Activity :size="28"/><h3>还没有操作日志</h3><p>连接、上号与调度决策会在这里留下记录。</p></div></section>

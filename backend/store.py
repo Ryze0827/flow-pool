@@ -29,6 +29,7 @@ class Store:
         self.db.executescript('''
             CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS postgres_settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS model_plaza_settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS rate_rules (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS mail_settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS mail_messages (
