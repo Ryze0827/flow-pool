@@ -50,7 +50,6 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
   <div class="stat-card performance-card" :title="detail">
     <div class="stat-label">性能指标 <button class="icon-button performance-refresh" type="button" :disabled="loading" :aria-busy="loading" title="刷新性能指标" aria-label="刷新性能指标" @click="refresh"><RefreshCw :size="17" :class="{ spinning: loading }"/></button></div>
     <div class="stat-value"><strong>{{ sample?.rpm ?? '—' }}</strong><span>RPM</span></div>
-    <div class="stat-foot"><span :class="{ 'orange-text': warning }">{{ status }}</span><span>· 30s 刷新</span></div>
   </div>
 </template>
 
@@ -60,7 +59,4 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
 .stat-value { display: flex; align-items: baseline; }
 .stat-value strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: inherit; }
 .stat-value > span { flex-shrink: 0; }
-.stat-foot { gap: 5px; white-space: nowrap; }
-.stat-foot > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.stat-foot > span:last-child { flex-shrink: 0; }
 </style>
