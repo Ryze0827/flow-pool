@@ -70,7 +70,7 @@ onMounted(() => {
   void load()
   polling = setInterval(() => {
     if (!busy.value && !scheduleDirty.value) void load()
-  }, 30000)
+  }, 60000)
 })
 onUnmounted(() => clearInterval(polling))
 </script>

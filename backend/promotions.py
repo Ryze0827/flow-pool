@@ -12,7 +12,7 @@ from .sub2api import Sub2API, UpstreamError
 
 WELFARE_GROUPS_SQL = "SELECT id, name, status FROM groups WHERE deleted_at IS NULL AND platform='openai' AND name LIKE '%福利%' ORDER BY id"
 SHANGHAI = ZoneInfo('Asia/Shanghai')
-INTERVAL_SECONDS = 30
+INTERVAL_SECONDS = 60
 
 
 class Promotions:
