@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -29,6 +29,7 @@ from .invoices import Invoices, invoice_router
 from .invoice_cors import InvoiceCORSMiddleware
 from .rate_inspection import RateInspection, select_groups
 from .group_control import GroupControl
+from .promotions import Promotions
 from .postgres import Sub2Postgres, resolve_postgres_settings
 from .analytics import Analytics
 from .performance import PerformanceMonitor
@@ -49,13 +50,14 @@ invoices = None
 upstream_auth = None
 rate_inspection = None
 group_control = None
+promotions = None
 performance = None
 POOL_NAMES = {'priority': '高权重组', 'risk': '风控组', 'third_party': '三方账号组'}
 
 
 @asynccontextmanager
 async def lifespan(app):
-    global store, scheduler, importer, account_login, mailer, invoices, upstream_auth, rate_inspection, group_control, performance
+    global store, scheduler, importer, account_login, mailer, invoices, upstream_auth, rate_inspection, group_control, promotions, performance
     DATA.mkdir(parents=True, exist_ok=True)
     lock_file = (DATA / 'worker.lock').open('w')
     try:
@@ -66,6 +68,7 @@ async def lifespan(app):
     upstream_auth = UpstreamAuth(store)
     rate_inspection = RateInspection(store)
     group_control = GroupControl(store)
+    promotions = Promotions(store)
     mailer = Mailer(store)
     invoices = Invoices(store, mailer)
     performance = PerformanceMonitor(store, mailer)
@@ -317,6 +320,16 @@ async def group_control_groups():
 @app.post('/api/group-control/openai-fast')
 async def group_control_openai_fast(value: GroupOpenAIFastRequest, request: Request):
     return await group_control.set_openai_fast(list(dict.fromkeys(value.group_ids)), value.enabled, request.state.admin['id'])
+
+
+@app.get('/api/promotions/welfare-groups')
+async def promotion_welfare_groups():
+    return await promotions.groups()
+
+
+@app.put('/api/promotions/welfare-groups/{group_id}/status')
+async def promotion_welfare_group_status(group_id: int, value: WelfareGroupStatusRequest, request: Request):
+    return await promotions.set_welfare_group_status(group_id, value.enabled, request.state.admin['id'])
 
 
 @app.get('/api/upgrade')

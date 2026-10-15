@@ -298,6 +298,10 @@ class GroupOpenAIFastRequest(BaseModel):
     enabled: StrictBool
 
 
+class WelfareGroupStatusRequest(BaseModel):
+    enabled: StrictBool
+
+
 class Enroll(BaseModel):
     account_ids: list[int] = Field(min_length=1, max_length=500)
     pool: Pool
