@@ -80,7 +80,17 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
 .tabs button .tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;margin-left:5px;border-radius:5px;background:#dfe8f3;color:#42546d;font-size:12px;font-variant-numeric:tabular-nums;line-height:1}.tabs button.active .tab-count{background:#dbe8f7;color:#205d96}
 .usage-active-count{display:inline-flex;align-items:center;gap:6px;margin-top:9px;font-size:13px;color:var(--success)}
 .usage-active-value{font-size:20px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+.usage-pool-toggle{display:none}
 @media(max-width:850px){
+  .usage-panel .usage-pool-card{min-height:0}
+  .usage-pool-heading{flex-wrap:wrap;gap:0;padding-block:8px}
+  .usage-pool-toggle{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:6px 0;border:0;background:transparent;text-align:left;font-size:16px;font-weight:600}
+  .usage-pool-toggle>.count-chip{margin-left:auto;font-weight:400;white-space:nowrap}
+  .usage-pool-toggle>svg{flex-shrink:0}
+  .usage-pool-toggle[aria-expanded=true]>svg{transform:rotate(90deg)}
+  .usage-pool-heading>div:first-of-type{width:100%;padding-bottom:6px}
+  .usage-pool-heading>div:first-of-type>h3,.usage-pool-heading>.count-chip{display:none}
+  .usage-pool-card.is-collapsed .usage-records-scroll,.usage-pool-card.is-collapsed .usage-pool-heading>div:first-of-type{display:none}
   .usage-pool-card .usage-table .usage-total-duration{display:none}
   .usage-pool-card .usage-table th,.usage-pool-card .usage-table td{padding-block:7px;line-height:1.45}
   .usage-pool-card .usage-table .latency-cell{gap:0}
@@ -89,7 +99,7 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
 .usage-active-accounts{display:none}
 @media(min-width:851px){
   .usage-pool-heading{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) auto;gap:12px;flex-shrink:0}
-  .usage-pool-heading>div:first-child{min-width:0;overflow-wrap:anywhere}
+  .usage-pool-heading>div:first-of-type{min-width:0;overflow-wrap:anywhere}
   .usage-pool-heading>.count-chip{margin:0;white-space:nowrap}
   .usage-active-accounts{display:flex;flex-direction:column;min-width:0;height:112px;overflow:hidden;border:1px solid var(--border);border-radius:8px;background:#fff}
   .usage-active-accounts-heading{flex-shrink:0;padding:6px 9px;border-bottom:1px solid var(--border);font-size:12px;font-weight:500;color:var(--muted)}

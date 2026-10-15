@@ -46,6 +46,7 @@ const sidebarCollapsed = ref(globalThis.localStorage?.getItem('flowpool.sidebar.
 const refreshIntervalSeconds = 10
 const settings = ref(null)
 const data = ref({ accounts: [], events: [], inspections: [], batches: [], worker: {}, configured: false })
+const usageExpandedPools = ref({ risk: true, priority: false, third_party: false })
 const usagePoolRecords = ref({ priority: [], risk: [], third_party: [] })
 const usagePoolErrorCounts = ref({ priority: null, risk: null, third_party: null })
 const usageTotal = ref(0)
@@ -246,6 +247,7 @@ function handlePopState() {
 }
 
 watch(page, (value, previous) => {
+  if (value === 'usage') usageExpandedPools.value = { risk: true, priority: false, third_party: false }
   if (value !== 'import') relogin.value = null
   if (syncingRoute.value) return
   const path = routePaths[value] || routePaths.overview
@@ -658,7 +660,11 @@ onUnmounted(() => {
             <div v-if="!data.configured" class="empty-state"><Unplug :size="28"/><h3>请先连接 Sub2API</h3><p>配置管理员 API Key 后才能读取账号调用记录。</p><button class="button" @click="page = 'settings'">配置连接<ArrowRight :size="15"/></button></div>
             <div v-else-if="usageNoNewData" class="usage-no-data">无新数据</div>
             <div v-else class="usage-pool-grid">
-              <section v-for="pool in usagePools" :key="pool.id" :class="['usage-pool-card', pool.color]"><div class="usage-pool-heading"><div><h3>{{ pool.name }}</h3><span class="usage-active-count"><span class="dot green"></span>正在调度中 <span class="usage-active-value">{{ usageActiveCounts[pool.id] || 0 }}</span> 个</span><span class="usage-overload-count" :title="'响应内容包含 Our servers are currently overloaded 的错误请求数'">最近 5 分钟过载错误 <template v-if="usagePoolErrorCounts[pool.id] === null">需配置 PostgreSQL</template><template v-else><button class="text-button usage-overload-value" :aria-label="`查看${pool.name}最近 5 分钟过载账号`" @click="showOverloads(pool.id)">{{ usagePoolErrorCounts[pool.id] }}</button> 次</template></span></div>
+              <section v-for="pool in usagePools" :key="pool.id" :class="['usage-pool-card', pool.color, { 'is-collapsed': !usageExpandedPools[pool.id] }]"><div class="usage-pool-heading">
+                <button class="usage-pool-toggle" type="button" :aria-expanded="usageExpandedPools[pool.id]" :aria-controls="`usage-records-${pool.id}`" @click="usageExpandedPools[pool.id] = !usageExpandedPools[pool.id]">
+                  <span>{{ pool.name }}</span><span class="count-chip">{{ usagePoolRecords[pool.id]?.length || 0 }} 条记录</span><ChevronRight :size="18"/>
+                </button>
+                <div><h3>{{ pool.name }}</h3><span class="usage-active-count"><span class="dot green"></span>正在调度中 <span class="usage-active-value">{{ usageActiveCounts[pool.id] || 0 }}</span> 个</span><span class="usage-overload-count" :title="'响应内容包含 Our servers are currently overloaded 的错误请求数'">最近 5 分钟过载错误 <template v-if="usagePoolErrorCounts[pool.id] === null">需配置 PostgreSQL</template><template v-else><button class="text-button usage-overload-value" :aria-label="`查看${pool.name}最近 5 分钟过载账号`" @click="showOverloads(pool.id)">{{ usagePoolErrorCounts[pool.id] }}</button> 次</template></span></div>
                 <section class="usage-active-accounts" :aria-label="`${pool.name}正在调度中的账号及剩余额度`">
                   <div class="usage-active-accounts-heading">账号 · 剩余额度</div>
                   <div class="usage-active-list" tabindex="0" role="region" :aria-label="`${pool.name}账号额度列表，可滚动`">
@@ -669,7 +675,7 @@ onUnmounted(() => {
                     <div v-if="!usageActiveAccounts[pool.id].length" class="usage-active-empty">暂无正在调度中的账号</div>
                   </div>
                 </section>
-                <span class="count-chip">{{ usagePoolRecords[pool.id]?.length || 0 }} 条记录</span></div><div class="usage-records-scroll"><table class="usage-table" :class="{ 'usage-table-expanded': settings.usage_visible_columns.length > 0 }"><thead><tr><th>账号</th><th v-if="isUsageColumnVisible('model')">模型</th><th v-if="isUsageColumnVisible('reasoning_effort')">推理强度</th><th v-if="isUsageColumnVisible('group')">分组</th><th>延迟</th><th>时间</th></tr></thead><tbody><tr v-for="record in usagePoolRecords[pool.id]" :key="record.id"><td><strong>{{ record.account_name || '未命名账号' }}</strong></td><td v-if="isUsageColumnVisible('model')">{{ record.model || '—' }}</td><td v-if="isUsageColumnVisible('reasoning_effort')"><span class="reasoning-tag">{{ record.reasoning_effort || '—' }}</span></td><td v-if="isUsageColumnVisible('group')"><span class="pool-tag">{{ record.group_name || '未分组' }}</span></td><td><div class="latency-cell"><span :class="{ 'slow-latency': record.first_token_ms > settings.rule.threshold_ms }">首字 {{ latencyText(record.first_token_ms) }}</span><small class="usage-total-duration">总耗时 {{ latencyText(record.duration_ms) }}</small></div></td><td class="muted small">{{ usageTimeText(record.created_at) }}</td></tr></tbody></table><div v-if="!usagePoolRecords[pool.id]?.length" class="usage-pool-empty">暂无调用记录</div></div></section>
+                <span class="count-chip">{{ usagePoolRecords[pool.id]?.length || 0 }} 条记录</span></div><div :id="`usage-records-${pool.id}`" class="usage-records-scroll"><table class="usage-table" :class="{ 'usage-table-expanded': settings.usage_visible_columns.length > 0 }"><thead><tr><th>账号</th><th v-if="isUsageColumnVisible('model')">模型</th><th v-if="isUsageColumnVisible('reasoning_effort')">推理强度</th><th v-if="isUsageColumnVisible('group')">分组</th><th>延迟</th><th>时间</th></tr></thead><tbody><tr v-for="record in usagePoolRecords[pool.id]" :key="record.id"><td><strong>{{ record.account_name || '未命名账号' }}</strong></td><td v-if="isUsageColumnVisible('model')">{{ record.model || '—' }}</td><td v-if="isUsageColumnVisible('reasoning_effort')"><span class="reasoning-tag">{{ record.reasoning_effort || '—' }}</span></td><td v-if="isUsageColumnVisible('group')"><span class="pool-tag">{{ record.group_name || '未分组' }}</span></td><td><div class="latency-cell"><span :class="{ 'slow-latency': record.first_token_ms > settings.rule.threshold_ms }">首字 {{ latencyText(record.first_token_ms) }}</span><small class="usage-total-duration">总耗时 {{ latencyText(record.duration_ms) }}</small></div></td><td class="muted small">{{ usageTimeText(record.created_at) }}</td></tr></tbody></table><div v-if="!usagePoolRecords[pool.id]?.length" class="usage-pool-empty">暂无调用记录</div></div></section>
             </div>
           </section>
         </template>
