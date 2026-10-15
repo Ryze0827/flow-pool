@@ -81,6 +81,9 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
 .usage-active-count{display:inline-flex;align-items:center;gap:6px;margin-top:9px;font-size:13px;color:var(--success)}
 .usage-active-value{font-size:20px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
 .usage-pool-toggle{display:none}
+.usage-heading-content{min-width:0}
+.usage-title-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px 20px}
+.usage-title-line h2{margin:0}
 @media(max-width:850px){
   .usage-panel .usage-pool-card{min-height:0}
   .usage-pool-heading{flex-wrap:wrap;gap:0;padding-block:8px}

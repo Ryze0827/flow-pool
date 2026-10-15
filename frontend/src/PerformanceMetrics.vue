@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { api } from './api'
 
+defineProps({ compact: Boolean })
+
 const metrics = ref(null)
 const error = ref('')
 const loading = ref(false)
@@ -47,7 +49,8 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
 </script>
 
 <template>
-  <div class="stat-card performance-card" :title="detail">
+  <span v-if="compact" :class="['performance-inline', { 'orange-text': warning }]" :title="`${detail}\n${status}`" :aria-label="`性能指标：${sample?.rpm ?? '暂无数据'} RPM，${status}`"><strong>{{ sample?.rpm ?? '—' }}</strong><span>RPM</span></span>
+  <div v-else class="stat-card performance-card" :title="detail">
     <div class="stat-label">性能指标 <button class="icon-button performance-refresh" type="button" :disabled="loading" :aria-busy="loading" title="刷新性能指标" aria-label="刷新性能指标" @click="refresh"><RefreshCw :size="17" :class="{ spinning: loading }"/></button></div>
     <div class="stat-value"><strong>{{ sample?.rpm ?? '—' }}</strong><span>RPM</span></div>
   </div>
@@ -59,4 +62,7 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
 .stat-value { display: flex; align-items: baseline; }
 .stat-value strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: inherit; }
 .stat-value > span { flex-shrink: 0; }
+.performance-inline { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.performance-inline strong { font-size: 20px; font-weight: 650; line-height: 1.3; }
+.performance-inline > span { color: var(--muted); font-size: 12px; }
 </style>
