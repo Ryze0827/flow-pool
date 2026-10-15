@@ -302,6 +302,20 @@ class WelfareGroupStatusRequest(BaseModel):
     enabled: StrictBool
 
 
+class WelfareSchedule(BaseModel):
+    enabled: StrictBool = False
+    start_hour: int = Field(22, strict=True, ge=0, le=23)
+    end_hour: int = Field(8, strict=True, ge=0, le=23)
+    timezone: Literal['Asia/Shanghai'] = 'Asia/Shanghai'
+
+    @field_validator('end_hour')
+    @classmethod
+    def time_range_valid(cls, value, info):
+        if value == info.data.get('start_hour'):
+            raise ValueError('开始时间和结束时间不能相同')
+        return value
+
+
 class Enroll(BaseModel):
     account_ids: list[int] = Field(min_length=1, max_length=500)
     pool: Pool

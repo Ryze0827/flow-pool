@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, WelfareSchedule, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -87,9 +87,13 @@ async def lifespan(app):
     task = asyncio.create_task(after_deploy(scheduler))
     mail_task = asyncio.create_task(after_deploy(mailer))
     performance_task = asyncio.create_task(after_deploy(performance))
+    promotions_task = asyncio.create_task(after_deploy(promotions))
     try:
         yield
     finally:
+        promotions_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await promotions_task
         performance_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await performance_task
@@ -330,6 +334,11 @@ async def promotion_welfare_groups():
 @app.put('/api/promotions/welfare-groups/{group_id}/status')
 async def promotion_welfare_group_status(group_id: int, value: WelfareGroupStatusRequest, request: Request):
     return await promotions.set_welfare_group_status(group_id, value.enabled, request.state.admin['id'])
+
+
+@app.put('/api/promotions/welfare-schedule')
+async def promotion_welfare_schedule(value: WelfareSchedule, request: Request):
+    return await promotions.save_schedule(value, request.state.admin['id'])
 
 
 @app.get('/api/upgrade')

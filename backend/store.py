@@ -6,7 +6,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
-from .models import MailSettings, PostgresSettings, RateRules, Settings
+from .models import MailSettings, PostgresSettings, RateRules, Settings, WelfareSchedule
 from .sub2api import public_account
 
 
@@ -32,6 +32,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS model_plaza_settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS rate_rules (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS mail_settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS welfare_schedule (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS mail_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, kind TEXT NOT NULL,
                 event_key TEXT UNIQUE, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
@@ -151,6 +152,14 @@ class Store:
 
     def save_mail_settings(self, settings):
         self.db.execute('INSERT OR REPLACE INTO mail_settings VALUES (1, ?)', (self.seal(settings.model_dump()),))
+        self.db.commit()
+
+    def welfare_schedule(self):
+        row = self.db.execute('SELECT payload FROM welfare_schedule WHERE id=1').fetchone()
+        return WelfareSchedule(**self.unseal(row['payload'])) if row else WelfareSchedule()
+
+    def save_welfare_schedule(self, value):
+        self.db.execute('INSERT OR REPLACE INTO welfare_schedule VALUES (1, ?)', (self.seal(value.model_dump()),))
         self.db.commit()
 
     def queue_mail(self, kind, payload, account_id=None, event_key=None, interval=0):
