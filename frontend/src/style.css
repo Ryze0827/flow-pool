@@ -80,6 +80,11 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
 .tabs button .tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;margin-left:5px;border-radius:5px;background:#dfe8f3;color:#42546d;font-size:12px;font-variant-numeric:tabular-nums;line-height:1}.tabs button.active .tab-count{background:#dbe8f7;color:#205d96}
 .usage-active-count{display:inline-flex;align-items:center;gap:6px;margin-top:9px;font-size:13px;color:var(--success)}
 .usage-active-value{font-size:20px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+@media(max-width:850px){
+  .usage-pool-card .usage-table .usage-total-duration{display:none}
+  .usage-pool-card .usage-table th,.usage-pool-card .usage-table td{padding-block:7px;line-height:1.45}
+  .usage-pool-card .usage-table .latency-cell{gap:0}
+}
 /* Keep the desktop quota list inside the existing pool heading. */
 .usage-active-accounts{display:none}
 @media(min-width:851px){
