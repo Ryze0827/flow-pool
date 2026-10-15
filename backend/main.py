@@ -35,6 +35,8 @@ from .performance import PerformanceMonitor
 from .model_catalog import OPENAI_MODELS
 from .model_plaza import plaza_router
 from .security import RequestSecurityMiddleware
+from .advanced_groups import AdvancedGroups
+from .models import AdvancedGroupsBatch, AdvancedGroupsConfig
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('SCHEDULER_DATA_DIR', ROOT / 'data'))
@@ -398,6 +400,8 @@ async def settings_get():
 async def settings_put(value: Settings):
     async with scheduler.lock:
         current = store.settings()
+        # 高级分组通过独立入口保存，避免其它页面的旧设置快照覆盖配置。
+        value.advanced_group_ids = current.advanced_group_ids
         if current.base_url and current.base_url != value.base_url:
             raise HTTPException(409, '登录与管理必须使用同一后端；请在服务器配置 FLOWPOOL_SUB2API_URL 后重启')
         if not value.admin_key:
@@ -638,6 +642,25 @@ async def account_action(account_id: int, action: str):
                 else:
                     await _run_account_scheduling(account, action == 'resume', client)
     return {'ok': True}
+
+
+@app.get('/api/account-groups/config')
+async def advanced_groups_config_get():
+    return await AdvancedGroups(store).config()
+
+
+@app.put('/api/account-groups/config')
+async def advanced_groups_config_put(value: AdvancedGroupsConfig):
+    async with scheduler.lock:
+        return await AdvancedGroups(store).save_config(value)
+
+
+@app.post('/api/account-groups/batch')
+async def advanced_groups_batch(value: AdvancedGroupsBatch):
+    if scheduler.lock.locked():
+        raise HTTPException(409, '调度检查或其它账号操作正在进行，请稍后重试')
+    async with scheduler.lock:
+        return await AdvancedGroups(store).apply(value)
 
 
 @app.post('/api/accounts/pool-scheduling')

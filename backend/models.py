@@ -53,6 +53,26 @@ class PoolSchedulingRequest(BaseModel):
     enabled: bool = Field(strict=True)
 
 
+GroupId = Annotated[int, Field(strict=True, ge=1, le=9223372036854775807)]
+
+
+class AdvancedGroupsConfig(BaseModel):
+    group_ids: list[GroupId] = Field(max_length=200)
+
+    @field_validator('group_ids')
+    @classmethod
+    def unique_groups(cls, values):
+        if len(values) != len(set(values)):
+            raise ValueError('高级分组不能重复')
+        return sorted(values)
+
+
+class AdvancedGroupsBatch(AdvancedGroupsConfig):
+    pools: list[Pool] = Field(min_length=1, max_length=3)
+    account_ids: list[GroupId] = Field(min_length=1, max_length=10000)
+    operation: Literal['add', 'remove']
+
+
 class MailSettings(BaseModel):
     enabled: bool = False
     smtp_host: str = Field('', max_length=253)
@@ -240,6 +260,7 @@ class Settings(BaseModel):
         ModelMapping(source='gpt-6-luna', target='gpt-6-sol'),
     ]))
     usage_visible_columns: list[UsageColumn] = Field(default_factory=list, max_length=3)
+    advanced_group_ids: list[GroupId] = Field(default_factory=list, max_length=200)
 
     @field_validator('base_url')
     @classmethod
