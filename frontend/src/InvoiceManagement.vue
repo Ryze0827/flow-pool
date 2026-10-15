@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { CircleHelp, Plus, RefreshCw, X } from 'lucide-vue-next'
+import { CircleHelp, Copy, Plus, RefreshCw, X } from 'lucide-vue-next'
 import { api } from './api'
 
 const emit = defineEmits(['notify'])
@@ -14,6 +14,8 @@ const selected = ref(null)
 const detail = computed(() => items.value.find(item => item.id === selected.value))
 const note = ref('')
 const busy = ref(false)
+const copying = ref(false)
+const defaultInvoiceItem = '生产生活服务/信息服务费'
 const loading = ref(false)
 const error = ref('')
 const statuses = { pending: '待审核', rejected: '已驳回', approved: '待上传', issued: '已开票' }
@@ -55,6 +57,24 @@ async function saveRules() {
   } catch (e) { rulesError.value = e.message } finally { busy.value = false }
 }
 function open(item) { selected.value = item.id; note.value = '' }
+async function copyInvoice() {
+  const item = detail.value
+  if (!item || copying.value) return
+  copying.value = true
+  error.value = ''
+  const text = [
+    `抬头：${item.title}`,
+    `税号：${item.tax_id}`,
+    `金额：${amount(item.amount)} USD`,
+    `项目：${item.invoice_item || defaultInvoiceItem}`,
+  ].join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+    emit('notify', '开票信息已复制')
+  } catch {
+    error.value = '复制失败，请允许浏览器访问剪贴板后重试。'
+  } finally { copying.value = false }
+}
 function review(action) {
   const item = detail.value
   if (action === 'approve' && !window.confirm(`审核通过后将从账户余额扣除 ${amount(item.fee)} 手续费，确认继续？`)) return
@@ -108,7 +128,8 @@ onUnmounted(() => clearInterval(polling))
       <div class="modal-body">
         <div v-if="error" class="notice error" role="alert">{{ error }}</div>
         <p class="small muted">申请编号：{{ detail.id }}</p>
-        <dl class="invoice-details"><dt>抬头</dt><dd>{{ detail.title }}</dd><dt>开票项目</dt><dd>{{ detail.invoice_item || '未指定' }}</dd><dt>税号</dt><dd>{{ detail.tax_id }}</dd><dt>接收邮箱</dt><dd>{{ detail.email }}</dd><dt>订单</dt><dd>{{ detail.orders.map(order => '#' + order.id).join('、') }}</dd><dt>开票金额</dt><dd>{{ amount(detail.amount) }}</dd><dt>手续费</dt><dd>{{ amount(detail.fee) }}（{{ detail.fee_mode === 'fixed' ? '固定金额' : detail.rate + '%' }}）</dd><dt>状态</dt><dd>{{ statuses[detail.status] }}</dd></dl>
+        <dl class="invoice-details"><dt>抬头</dt><dd>{{ detail.title }}</dd><dt>开票项目</dt><dd>{{ detail.invoice_item || defaultInvoiceItem }}</dd><dt>税号</dt><dd>{{ detail.tax_id }}</dd><dt>接收邮箱</dt><dd>{{ detail.email }}</dd><dt>订单</dt><dd>{{ detail.orders.map(order => '#' + order.id).join('、') }}</dd><dt>开票金额</dt><dd>{{ amount(detail.amount) }}</dd><dt>手续费</dt><dd>{{ amount(detail.fee) }}（{{ detail.fee_mode === 'fixed' ? '固定金额' : detail.rate + '%' }}）</dd><dt>状态</dt><dd>{{ statuses[detail.status] }}</dd></dl>
+        <div class="form-actions"><button type="button" class="button" :disabled="copying" @click="copyInvoice"><Copy :size="15"/>{{ copying ? '正在复制…' : '复制开票信息' }}</button></div>
         <p v-if="detail.note" class="notice">{{ detail.note }}</p>
         <template v-if="detail.status === 'pending'">
           <label>审核 / 核对说明<textarea v-model.trim="note" rows="3" maxlength="500" :disabled="busy" placeholder="驳回或核对扣费结果时必填"/></label>

@@ -67,7 +67,7 @@ class QuoteRequest(BaseModel):
 
 
 class InvoiceRequest(QuoteRequest):
-    invoice_item: InvoiceItem = INVOICE_ITEMS[0]
+    invoice_item: InvoiceItem = '生产生活服务/信息服务费'
     title: str = Field(min_length=1, max_length=200)
     tax_id: str = Field(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9]+$')
     email: str = Field(min_length=3, max_length=254)
