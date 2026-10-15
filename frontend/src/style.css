@@ -129,7 +129,7 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
 
 /* Keep live countdowns from changing table geometry every second. */
 .accounts-panel .table-scroll table{min-width:1600px;table-layout:fixed}
-.accounts-panel .table-scroll th:nth-child(1){width:14%}.accounts-panel .table-scroll th:nth-child(2){width:6%}.accounts-panel .table-scroll th:nth-child(3){width:8%}.accounts-panel .table-scroll th:nth-child(4){width:6%}.accounts-panel .table-scroll th:nth-child(5){width:14%}.accounts-panel .table-scroll th:nth-child(6){width:10%}.accounts-panel .table-scroll th:nth-child(7){width:10%}.accounts-panel .table-scroll th:nth-child(8){width:12%}.accounts-panel .table-scroll th:nth-child(9){width:7%}.accounts-panel .table-scroll th:nth-child(10){width:7%}.accounts-panel .table-scroll th:nth-child(11){width:6%}
+.accounts-panel .table-scroll th.account-identity-cell{width:14%}.accounts-panel .table-scroll th.account-pool-cell{width:6%}.accounts-panel .table-scroll th.account-status-cell{width:8%}.accounts-panel .table-scroll th.account-guard-cell{width:6%}.accounts-panel .table-scroll th.account-quota-cell{width:14%}.accounts-panel .table-scroll th.account-explanation-cell{width:10%}.accounts-panel .table-scroll th.account-ratio-cell{width:10%}.accounts-panel .table-scroll th.account-check-cell{width:12%}.accounts-panel .table-scroll th.account-priority-cell{width:7%}.accounts-panel .table-scroll th.account-concurrency-cell{width:7%}.accounts-panel .table-scroll th.account-actions-cell{width:6%}
 .accounts-panel .table-scroll td,.cooldown-panel .table-scroll td{overflow:hidden}
 .accounts-panel .next-check,.accounts-panel .status-explain{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cooldown-panel .table-scroll table{min-width:950px;table-layout:fixed}
@@ -138,10 +138,8 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
 .usage-overload-count{display:block;margin-top:7px;color:var(--muted);font-size:13px}.usage-overload-value{color:#ad3f43;font-size:20px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
 
 /* 为数值编辑和右侧操作列预留空间。 */
-.accounts-panel .table-scroll th:nth-child(9),
-.accounts-panel .table-scroll th:nth-child(10),
-.accounts-panel .table-scroll td:nth-child(9),
-.accounts-panel .table-scroll td:nth-child(10){padding-inline:8px}
+.accounts-panel .table-scroll .account-priority-cell,
+.accounts-panel .table-scroll .account-concurrency-cell{padding-inline:8px}
 .accounts-panel .table-scroll th:last-child,
 .accounts-panel .table-scroll td:last-child{position:sticky;right:0;z-index:1;padding-inline:3px;background:#fff;box-shadow:-1px 0 var(--border)}
 .accounts-panel .table-scroll th:last-child{background:#fafbfd}
