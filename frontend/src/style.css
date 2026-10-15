@@ -80,6 +80,26 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
 .tabs button .tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;margin-left:5px;border-radius:5px;background:#dfe8f3;color:#42546d;font-size:12px;font-variant-numeric:tabular-nums;line-height:1}.tabs button.active .tab-count{background:#dbe8f7;color:#205d96}
 .usage-active-count{display:inline-flex;align-items:center;gap:6px;margin-top:9px;font-size:13px;color:var(--success)}
 .usage-active-value{font-size:20px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+/* Keep the desktop quota list inside the existing pool heading. */
+.usage-active-accounts{display:none}
+@media(min-width:851px){
+  .usage-pool-heading{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) auto;gap:12px;flex-shrink:0}
+  .usage-pool-heading>div:first-child{min-width:0;overflow-wrap:anywhere}
+  .usage-pool-heading>.count-chip{margin:0;white-space:nowrap}
+  .usage-active-accounts{display:flex;flex-direction:column;min-width:0;height:112px;overflow:hidden;border:1px solid var(--border);border-radius:8px;background:#fff}
+  .usage-active-accounts-heading{flex-shrink:0;padding:6px 9px;border-bottom:1px solid var(--border);font-size:12px;font-weight:500;color:var(--muted)}
+  .usage-active-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:0 9px;scrollbar-width:thin}
+  .usage-active-list:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .usage-active-account{min-width:0;padding:7px 0;border-bottom:1px solid var(--border)}
+  .usage-active-account:last-child{border-bottom:0}
+  .usage-active-account>strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;line-height:1.5;margin-bottom:4px}
+  .usage-active-empty{padding:12px 0;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+}
+@media(min-width:851px) and (max-width:1400px){
+  .usage-pool-heading{grid-template-columns:minmax(0,1fr) auto}
+  .usage-active-accounts{grid-column:1/-1;grid-row:2}
+}
+
 /* Use the full content area so long labels and tables have room to breathe. */
 .main-content{max-width:none;margin:0;padding-inline:28px}
 @media(max-width:600px){.main-content{padding-inline:15px}}

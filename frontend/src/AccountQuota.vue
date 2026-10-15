@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 
-const props = defineProps({ account: Object, now: Number })
+const props = defineProps({ account: Object, now: Number, compact: Boolean })
 const stamp = value => {
   if (value == null || value === '') return null
   const parsed = typeof value === 'number' ? value : Date.parse(value) / 1000
@@ -29,16 +29,16 @@ function resetText(reset) {
 </script>
 
 <template>
-  <div class="quota-cell">
+  <div :class="['quota-cell', { 'quota-compact': compact }]">
     <template v-if="windows.length">
       <div v-for="window in windows" :key="window.label" class="quota-window">
         <span>{{ window.label }} · 剩余 {{ Number(window.remaining.toFixed(1)) }}%<small v-if="!window.hasSnapshot" class="quota-default">默认满额</small></span>
         <div class="quota-track" role="meter" :aria-label="`${window.label}剩余额度`" :aria-valuenow="window.remaining" aria-valuemin="0" aria-valuemax="100">
           <span :style="{ width: `${window.remaining}%` }" :class="{ low: window.remaining <= 10, exhausted: window.remaining <= 0 }"></span>
         </div>
-        <small :title="window.reset ? dateText(window.reset) : ''">{{ resetText(window.reset) }}</small>
+        <small v-if="!compact" :title="window.reset ? dateText(window.reset) : ''">{{ resetText(window.reset) }}</small>
       </div>
-      <small :title="updated ? dateText(updated) : ''">{{ updated ? `快照 ${dateText(updated)}` : '快照时间未知' }}</small>
+      <small v-if="!compact" :title="updated ? dateText(updated) : ''">{{ updated ? `快照 ${dateText(updated)}` : '快照时间未知' }}</small>
     </template>
     <span v-else class="muted">暂无额度数据</span>
   </div>
@@ -53,4 +53,7 @@ function resetText(reset) {
 .quota-track span.low { background: #f59e0b; }
 .quota-track span.exhausted { background: #ef4444; }
 .quota-default { display: inline !important; margin-left: 4px; }
+.quota-compact { min-width: 0; font-size: 11px; }
+.quota-compact .quota-window > span { display: block; overflow-wrap: anywhere; }
+.quota-compact .quota-window + .quota-window { margin-top: 5px; }
 </style>
