@@ -311,6 +311,7 @@ class WelfareCountdownCopy(BaseModel):
 
 class WelfareSchedule(BaseModel):
     enabled: StrictBool = False
+    show_announcement: StrictBool = True
     start_hour: int = Field(22, strict=True, ge=0, le=23)
     end_hour: int = Field(8, strict=True, ge=0, le=23)
     timezone: Literal['Asia/Shanghai'] = 'Asia/Shanghai'

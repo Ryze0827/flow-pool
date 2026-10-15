@@ -10,10 +10,10 @@ const updating = ref(null)
 const savingSchedule = ref(false)
 const error = ref('')
 const schedule = ref(null)
-const scheduleDraft = ref({ enabled: false, start_hour: 22, end_hour: 8, timezone: 'Asia/Shanghai', countdown_copy: { zh_opening: '', zh_closing: '', en_opening: '', en_closing: '' } })
+const scheduleDraft = ref({ enabled: false, show_announcement: true, start_hour: 22, end_hour: 8, timezone: 'Asia/Shanghai', countdown_copy: { zh_opening: '', zh_closing: '', en_opening: '', en_closing: '' } })
 const hours = Array.from({ length: 24 }, (_, value) => ({ value, label: `${String(value).padStart(2, '0')}:00` }))
 const enabledCount = computed(() => groups.value.filter(group => group.status === 'active').length)
-const scheduleDirty = computed(() => schedule.value && JSON.stringify(scheduleDraft.value) !== JSON.stringify({ enabled: schedule.value.enabled, start_hour: schedule.value.start_hour, end_hour: schedule.value.end_hour, timezone: schedule.value.timezone, countdown_copy: schedule.value.countdown_copy }))
+const scheduleDirty = computed(() => schedule.value && JSON.stringify(scheduleDraft.value) !== JSON.stringify({ enabled: schedule.value.enabled, show_announcement: schedule.value.show_announcement, start_hour: schedule.value.start_hour, end_hour: schedule.value.end_hour, timezone: schedule.value.timezone, countdown_copy: schedule.value.countdown_copy }))
 const busy = computed(() => loading.value || updating.value !== null || savingSchedule.value)
 const scheduleState = computed(() => !schedule.value?.enabled ? '未开启定时控制' : schedule.value.active_now ? '当前处于福利时段' : '当前不在福利时段')
 const transitionText = computed(() => schedule.value?.next_transition_at ? new Date(schedule.value.next_transition_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '')
@@ -27,7 +27,7 @@ async function load() {
     const result = await api('/promotions/welfare-groups')
     groups.value = result.items
     schedule.value = result.schedule
-    scheduleDraft.value = { enabled: result.schedule.enabled, start_hour: result.schedule.start_hour, end_hour: result.schedule.end_hour, timezone: result.schedule.timezone, countdown_copy: { ...result.schedule.countdown_copy } }
+    scheduleDraft.value = { enabled: result.schedule.enabled, show_announcement: result.schedule.show_announcement, start_hour: result.schedule.start_hour, end_hour: result.schedule.end_hour, timezone: result.schedule.timezone, countdown_copy: { ...result.schedule.countdown_copy } }
   }
   catch (cause) { error.value = cause.message }
   finally { loading.value = false }
@@ -94,6 +94,7 @@ onUnmounted(() => clearInterval(polling))
       <form v-if="schedule" class="welfare-schedule" @submit.prevent="saveSchedule">
         <div class="schedule-toggle-copy"><Clock3 :size="18"/><div><strong>定时控制</strong><small>{{ scheduleState }}<template v-if="transitionText"> · 下次切换 {{ transitionText }}</template></small></div></div>
         <button type="button" class="welfare-switch" role="switch" :aria-checked="scheduleDraft.enabled" aria-label="启用福利分组定时控制" :disabled="busy" @click="scheduleDraft.enabled = !scheduleDraft.enabled"><span/></button>
+        <label class="schedule-announcement-toggle"><span>erxinai 公告</span><button type="button" class="welfare-switch" role="switch" :aria-checked="scheduleDraft.show_announcement" aria-label="在 erxinai 展示福利分组公告" :disabled="busy" @click="scheduleDraft.show_announcement = !scheduleDraft.show_announcement"><span/></button></label>
         <label>开始时间<select v-model.number="scheduleDraft.start_hour" required :disabled="busy"><option v-for="item in hours" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
         <label>结束时间<select v-model.number="scheduleDraft.end_hour" required :disabled="busy"><option v-for="item in hours" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
         <div class="schedule-timezone"><small>时区</small><strong>Asia/Shanghai</strong></div>
@@ -141,6 +142,7 @@ onUnmounted(() => clearInterval(polling))
 .schedule-timezone small, .schedule-timezone strong { display: block; }
 .schedule-timezone small { margin-bottom: .35rem; color: var(--muted); font-size: .78rem; }
 .schedule-timezone strong { font-size: .82rem; }
+.schedule-announcement-toggle { display: flex !important; align-items: center; gap: .6rem; white-space: nowrap; }
 .schedule-copy-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .schedule-copy-grid input { width: 100%; }
 .welfare-schedule > p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
