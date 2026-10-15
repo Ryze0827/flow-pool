@@ -104,3 +104,94 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
 .accounts-panel .table-scroll td:last-child{position:sticky;right:0;z-index:1;padding-inline:3px;background:#fff;box-shadow:-1px 0 var(--border)}
 .accounts-panel .table-scroll th:last-child{background:#fafbfd}
 .accounts-panel .table-scroll tbody tr:hover td:last-child{background:#fdfdff}
+
+/* Reflow the same account controls into cards on phones and small tablets. */
+.account-field-label,.account-action-label{display:none}
+@media(max-width:850px){
+  .overview-content .stats-grid{grid-template-columns:repeat(4,minmax(0,1fr));overflow:visible}
+  .overview-content .performance-card{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .overview-content .performance-card .stat-label{gap:16px}
+  .overview-content .performance-card .stat-value{margin:0}
+  .accounts-panel .table-toolbar{align-items:stretch}
+  .accounts-panel .tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;min-width:0}
+  .accounts-panel .tabs button{padding-inline:4px;min-height:44px;white-space:normal}
+  .accounts-panel .tabs button .tab-count{margin-left:3px}
+  .accounts-panel .filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .accounts-panel .filters .search-input{grid-column:1/-1;grid-row:1;min-height:44px}
+  .accounts-panel .filters select{grid-column:1/-1;grid-row:2;width:100%;min-height:44px}
+  .accounts-panel .filters>.button{min-width:0;min-height:44px;padding-inline:6px;white-space:normal}
+  .accounts-panel .account-list{overflow:visible;padding:0 16px 16px;background:#f7f9fc}
+  .accounts-panel .account-list table{display:block;min-width:0;width:100%;white-space:normal}
+  .accounts-panel .account-list thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .accounts-panel .account-list tbody{display:grid;gap:14px;padding-top:16px}
+  .accounts-panel .account-list tbody:empty{display:none}
+  .accounts-panel .account-list tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:'identity identity' 'pool guard' 'status status' 'quota quota' 'explanation explanation' 'ratio check' 'priority concurrency' 'actions actions';gap:14px 16px;padding:16px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:0 2px 6px #30466005}
+  .accounts-panel .account-list td{display:block;min-width:0;padding:0;border:0;overflow:visible;white-space:normal;overflow-wrap:anywhere}
+  .accounts-panel .account-list .account-identity-cell{grid-area:identity}
+  .accounts-panel .account-list .account-pool-cell{grid-area:pool;align-self:center}
+  .accounts-panel .account-list .account-status-cell{grid-area:status}
+  .accounts-panel .account-list .account-guard-cell{grid-area:guard;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+  .accounts-panel .account-list .account-quota-cell{grid-area:quota;padding:12px;background:#f7f9fc;border-radius:9px}
+  .accounts-panel .account-list .account-explanation-cell{grid-area:explanation}
+  .accounts-panel .account-list .account-ratio-cell{grid-area:ratio}
+  .accounts-panel .account-list .account-check-cell{grid-area:check}
+  .accounts-panel .account-list td.account-priority-cell{grid-area:priority;padding:0}
+  .accounts-panel .account-list td.account-concurrency-cell{grid-area:concurrency;padding:0}
+  .accounts-panel .account-list td.account-actions-cell{grid-area:actions;position:static;padding:12px 0 0;border-top:1px solid var(--border);box-shadow:none;background:transparent}
+  .accounts-panel .account-field-label{display:block;margin-bottom:6px;font-size:12px;font-weight:500;color:var(--muted);line-height:1.5}
+  .accounts-panel .account-guard-cell .account-field-label{margin:0}
+  .accounts-panel .check-row{min-height:44px;gap:5px;font-size:13px}
+  .accounts-panel .account-name{width:100%;max-width:none;min-height:44px;align-items:flex-start}
+  .accounts-panel .account-name>span:last-child{min-width:0;flex:1}
+  .accounts-panel .account-name strong,.accounts-panel .account-name small{max-width:none;white-space:normal;overflow-wrap:anywhere}
+  .accounts-panel .account-name strong{font-size:15px;line-height:1.5}
+  .accounts-panel .account-avatar{flex-shrink:0}
+  .accounts-panel .badge{white-space:normal}
+  .accounts-panel .cell-error{max-width:none;white-space:normal;overflow-wrap:anywhere}
+  .accounts-panel .status-explain,.accounts-panel .next-check{max-width:none;white-space:normal;overflow-wrap:anywhere}
+  .accounts-panel .quota-cell{min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;font-size:13px}
+  .accounts-panel .quota-window + .quota-window{margin-top:0}
+  .accounts-panel .quota-window:only-of-type,.accounts-panel .quota-cell>small{grid-column:1/-1}
+  .accounts-panel .quota-cell small{font-size:12px}
+  .accounts-panel .ratio-cell{gap:6px;flex-wrap:wrap}
+  .accounts-panel .progress-track{width:100%}
+  .accounts-panel .priority-control,.accounts-panel .concurrency-control{display:flex;width:100%;height:44px}
+  .accounts-panel .priority-control button,.accounts-panel .concurrency-control button{flex-basis:36px}
+  .accounts-panel .priority-control input,.accounts-panel .concurrency-control input{font-size:16px}
+  .accounts-panel .row-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .accounts-panel .row-actions .icon-button{width:100%;height:auto;min-height:44px;padding:8px 2px;gap:5px;background:#f2f6fb;font-size:12px}
+  .accounts-panel .account-action-label{display:inline}
+  .accounts-panel .row-actions .icon-button:last-child{color:var(--muted);background:transparent}
+  .accounts-panel .table-footer{align-items:flex-start;gap:8px;line-height:1.6}
+}
+@media(max-width:600px){
+  .overview-shell .topbar{padding-inline:64px 72px;gap:10px;min-height:64px;height:auto;padding-block:12px}
+  .overview-shell .breadcrumb{font-size:0;gap:0}
+  .overview-shell .breadcrumb>svg,.overview-shell .connection,.overview-shell .top-divider,.overview-shell .topbar-right>span{display:none}
+  .overview-shell .breadcrumb strong{font-size:15px;white-space:nowrap}
+  .overview-shell .topbar-right{gap:10px;min-width:0}
+  .overview-shell .topbar-right .text-button{min-height:40px}
+  .overview-shell .sidebar{height:calc(76px + env(safe-area-inset-bottom));padding-bottom:calc(6px + env(safe-area-inset-bottom));backdrop-filter:none;background:#fff}
+  .overview-shell .ranking-sidebar{position:absolute;top:10px;right:16px}
+  .overview-shell .ranking-toggle{border:1px solid var(--border);border-radius:9px;box-shadow:none}
+  .overview-shell .ranking-panel{top:calc(100% + 8px);right:0;max-height:calc(100dvh - 160px)}
+  .overview-shell main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+  .overview-content{padding-top:16px}
+  .overview-content .page-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .overview-content .page-actions .button:first-child{grid-column:1/-1}
+  .overview-content .page-actions .button{padding-inline:8px;min-height:44px}
+  .overview-content .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:16px}
+  .overview-content .stat-card{padding:14px;min-width:0}
+  .overview-content .stats-grid .performance-card{min-height:72px}
+  .overview-content .performance-card .stat-label{justify-content:flex-start}
+  .overview-content .performance-card .stat-value{font-size:28px}
+  .accounts-panel>.panel-heading{align-items:flex-start;gap:14px}
+  .accounts-panel>.panel-heading>.button{width:100%;min-height:44px}
+  .accounts-panel .account-list{padding-inline:10px}
+  .accounts-panel .account-list tr{padding:14px 12px;column-gap:12px}
+  .accounts-panel .table-toolbar{padding-inline:12px}
+  .accounts-panel .tabs{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .accounts-panel .tabs button{font-size:13px}
+  .overview-content .recent-events .event-row>span:nth-child(2){min-width:0}
+  .overview-content .recent-events .event-row time{padding-left:26px}
+}
