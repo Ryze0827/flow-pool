@@ -467,7 +467,7 @@ async function accountAction(account, operation) {
   await action(async () => {
     await api(`/accounts/${account.id}/${operation}`, 'POST')
     const resumed = isGuarded(account) ? (account.resume_at != null ? '已结束冷却，恢复调度并进入新一轮观察' : '已恢复调度，进入新一轮观察') : '已恢复调度'
-    notify({ pause: '账号已暂停，需手动恢复', resume: account.pool === 'third_party' || account.cooldown_mode === 'image' ? '已恢复全部正常 GPT 分组（含生图）并开启调度' : resumed, remove: '已移出本地号池并结束托管，上游状态保持不变' }[operation]); await refresh()
+    notify({ pause: '账号已暂停，需手动恢复', cooldown: '已提交快速冷却，请查看最新调度状态', resume: account.pool === 'third_party' || account.cooldown_mode === 'image' ? '已恢复全部正常 GPT 分组（含生图）并开启调度' : resumed, remove: '已移出本地号池并结束托管，上游状态保持不变' }[operation]); await refresh()
   })
 }
 async function selectBatch(value) {
@@ -669,7 +669,12 @@ onUnmounted(() => {
                   <div class="usage-active-accounts-heading">账号 · 剩余额度</div>
                   <div class="usage-active-list" tabindex="0" role="region" :aria-label="`${pool.name}账号额度列表，可滚动`">
                     <div v-for="account in usageActiveAccounts[pool.id]" :key="account.id" class="usage-active-account">
-                      <strong :title="`${account.name} · #${account.id}`">{{ account.name }}</strong>
+                      <div class="usage-active-account-heading">
+                        <strong :title="`${account.name} · #${account.id}`">{{ account.name }}</strong>
+                        <button class="usage-account-action" type="button" :disabled="busy" :title="isGuarded(account) ? '快速冷却，到期自动恢复' : '停止调度，需手动恢复'" :aria-label="`${isGuarded(account) ? '快速冷却' : '停止调度'}账号 ${account.name}（#${account.id}）`" @click="accountAction(account, isGuarded(account) ? 'cooldown' : 'pause')">
+                          <Clock3 v-if="isGuarded(account)" :size="13"/><Pause v-else :size="13"/>{{ isGuarded(account) ? '冷却' : '停调' }}
+                        </button>
+                      </div>
                       <AccountQuota :account="account" :now="now" compact/>
                     </div>
                     <div v-if="!usageActiveAccounts[pool.id].length" class="usage-active-empty">暂无正在调度中的账号</div>
