@@ -302,11 +302,19 @@ class WelfareGroupStatusRequest(BaseModel):
     enabled: StrictBool
 
 
+class WelfareCountdownCopy(BaseModel):
+    zh_opening: str = Field('Codex福利分组开启倒计时', min_length=1, max_length=100)
+    zh_closing: str = Field('Codex福利分组关闭倒计时', min_length=1, max_length=100)
+    en_opening: str = Field('Codex welfare groups open in', min_length=1, max_length=100)
+    en_closing: str = Field('Codex welfare groups close in', min_length=1, max_length=100)
+
+
 class WelfareSchedule(BaseModel):
     enabled: StrictBool = False
     start_hour: int = Field(22, strict=True, ge=0, le=23)
     end_hour: int = Field(8, strict=True, ge=0, le=23)
     timezone: Literal['Asia/Shanghai'] = 'Asia/Shanghai'
+    countdown_copy: WelfareCountdownCopy = Field(default_factory=WelfareCountdownCopy)
 
     @field_validator('end_hour')
     @classmethod
