@@ -17,6 +17,7 @@ const error = ref('')
 const outcome = ref(null)
 const pending = ref(null)
 const confirmation = ref(null)
+const expanded = ref(false)
 const disabled = computed(() => props.busy || working.value || loading.value)
 const sameIds = (left, right) => [...left].sort((a, b) => a - b).join(',') === [...right].sort((a, b) => a - b).join(',')
 const dirty = computed(() => !sameIds(draft.value, saved.value))
@@ -45,8 +46,10 @@ async function load() {
   catch (cause) { error.value = cause.message }
   finally { loading.value = false }
 }
-function opened(event) {
-  if (event.target.open && !loaded.value) void load()
+function toggleExpanded() {
+  if (working.value) return
+  expanded.value = !expanded.value
+  if (expanded.value && !loaded.value) void load()
 }
 async function save() {
   if (disabled.value || !dirty.value) return
@@ -100,9 +103,9 @@ async function apply() {
 </script>
 
 <template>
-  <details class="advanced-groups" @toggle="opened">
-    <summary @click="working && $event.preventDefault()"><Settings2 :size="16"/>高级分组批量操作<span class="muted small">多选 FlowPool 号池</span></summary>
-    <div class="advanced-body">
+  <section class="advanced-groups">
+    <button type="button" class="advanced-toggle" :aria-expanded="expanded" :disabled="working" @click="toggleExpanded"><span class="advanced-toggle-label"><Settings2 :size="16"/>高级分组批量操作<span class="muted small">多选 FlowPool 号池</span></span><span class="advanced-toggle-action">{{ expanded ? '收起' : '展开' }}</span></button>
+    <div v-if="expanded" class="advanced-body">
       <p v-if="!configured" class="muted small">请先配置 Sub2API 连接。</p>
       <template v-else>
         <div class="advanced-toolbar"><p class="small muted">作用于所选号池的全部托管账号，不受列表搜索和状态筛选影响。</p><button type="button" class="button" :disabled="disabled || dirty" @click="load"><RefreshCw :size="14"/>刷新分组</button></div>
@@ -144,13 +147,16 @@ async function apply() {
         <div class="modal-footer"><button type="button" class="button" :disabled="working" @click="confirmation.close()">取消</button><button type="button" class="button primary" :disabled="disabled" @click="apply">{{ working ? '处理中…' : `确认${pending.operation === 'add' ? '移入' : '移出'} ${pending.accounts.length} 个账号` }}</button></div>
       </template>
     </dialog>
-  </details>
+  </section>
 </template>
 
 <style scoped>
 .advanced-groups { margin: 0 23px 16px; border: 1px solid var(--border); border-radius: 9px; background: #f8fafc; }
-.advanced-groups > summary { display: flex; align-items: center; gap: 8px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: 600; flex-wrap: wrap; }
-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.advanced-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; font-size: 14px; font-weight: 600; }
+.advanced-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.advanced-toggle:disabled { cursor: wait; }
+.advanced-toggle-label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.advanced-toggle-action { flex: 0 0 auto; color: var(--accent); font-size: 13px; font-weight: 600; }
 .advanced-body { padding: 0 14px 14px; }
 .advanced-toolbar,.advanced-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .advanced-toolbar { margin: 12px 0; }
