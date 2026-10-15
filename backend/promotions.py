@@ -27,9 +27,9 @@ class Promotions:
     @staticmethod
     def scheduled_enabled(schedule, now=None):
         now = now or datetime.now(SHANGHAI)
-        current = now.hour
-        start = schedule.start_hour
-        end = schedule.end_hour
+        current = now.hour * 60 + now.minute
+        start = schedule.start_minute
+        end = schedule.end_minute
         return start <= current < end if start < end else current >= start or current < end
 
     @staticmethod
@@ -38,8 +38,8 @@ class Promotions:
         candidates = []
         for day in range(3):
             date = now.date() + timedelta(days=day)
-            for hour in (schedule.start_hour, schedule.end_hour):
-                candidate = datetime.combine(date, clock_time(hour), SHANGHAI)
+            for minute in (schedule.start_minute, schedule.end_minute):
+                candidate = datetime.combine(date, clock_time(minute // 60, minute % 60), SHANGHAI)
                 if candidate > now:
                     candidates.append(candidate)
         return min(candidates).isoformat() if candidates else None
@@ -57,7 +57,7 @@ class Promotions:
         now = datetime.now(SHANGHAI)
         if not schedule.enabled:
             return {'enabled': False}
-        opening = datetime.combine(now.date(), clock_time(schedule.start_hour), SHANGHAI)
+        opening = datetime.combine(now.date(), clock_time(schedule.start_minute // 60, schedule.start_minute % 60), SHANGHAI)
         if opening <= now:
             opening += timedelta(days=1)
         return {**schedule.model_dump(), 'active_now': self.scheduled_enabled(schedule, now),
@@ -88,7 +88,7 @@ class Promotions:
             self.store.save_welfare_schedule(value)
             result = await self.reconcile_locked()
         state = '已开启' if value.enabled else '已关闭'
-        self.store.event('welfare_schedule', f"管理员 #{owner_id} {state}夜间福利分组定时控制：{value.start_hour:02d}:00–{value.end_hour:02d}:00（Asia/Shanghai）")
+        self.store.event('welfare_schedule', f"管理员 #{owner_id} {state}夜间福利分组定时控制：{value.start_minute // 60:02d}:{value.start_minute % 60:02d}–{value.end_minute // 60:02d}:{value.end_minute % 60:02d}（Asia/Shanghai）")
         return {**self.schedule_status(), 'sync': result}
 
     async def set_welfare_group_status(self, group_id, enabled, owner_id):

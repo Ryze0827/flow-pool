@@ -10,10 +10,9 @@ const updating = ref(null)
 const savingSchedule = ref(false)
 const error = ref('')
 const schedule = ref(null)
-const scheduleDraft = ref({ enabled: false, show_announcement: true, start_hour: 22, end_hour: 8, timezone: 'Asia/Shanghai', countdown_copy: { zh_opening: '', zh_closing: '', en_opening: '', en_closing: '' } })
-const hours = Array.from({ length: 24 }, (_, value) => ({ value, label: `${String(value).padStart(2, '0')}:00` }))
+const scheduleDraft = ref({ enabled: false, show_announcement: true, start_hour: 22, end_hour: 8, start_minute: 1320, end_minute: 480, timezone: 'Asia/Shanghai', countdown_copy: { zh_opening: '', zh_closing: '', en_opening: '', en_closing: '' } })
 const enabledCount = computed(() => groups.value.filter(group => group.status === 'active').length)
-const scheduleDirty = computed(() => schedule.value && JSON.stringify(scheduleDraft.value) !== JSON.stringify({ enabled: schedule.value.enabled, show_announcement: schedule.value.show_announcement, start_hour: schedule.value.start_hour, end_hour: schedule.value.end_hour, timezone: schedule.value.timezone, countdown_copy: schedule.value.countdown_copy }))
+const scheduleDirty = computed(() => schedule.value && JSON.stringify(scheduleDraft.value) !== JSON.stringify({ enabled: schedule.value.enabled, show_announcement: schedule.value.show_announcement, start_hour: schedule.value.start_hour, end_hour: schedule.value.end_hour, start_minute: schedule.value.start_minute, end_minute: schedule.value.end_minute, timezone: schedule.value.timezone, countdown_copy: schedule.value.countdown_copy }))
 const busy = computed(() => loading.value || updating.value !== null || savingSchedule.value)
 const scheduleState = computed(() => !schedule.value?.enabled ? '未开启定时控制' : schedule.value.active_now ? '当前处于福利时段' : '当前不在福利时段')
 const transitionText = computed(() => schedule.value?.next_transition_at ? new Date(schedule.value.next_transition_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '')
@@ -27,7 +26,7 @@ async function load() {
     const result = await api('/promotions/welfare-groups')
     groups.value = result.items
     schedule.value = result.schedule
-    scheduleDraft.value = { enabled: result.schedule.enabled, show_announcement: result.schedule.show_announcement, start_hour: result.schedule.start_hour, end_hour: result.schedule.end_hour, timezone: result.schedule.timezone, countdown_copy: { ...result.schedule.countdown_copy } }
+    scheduleDraft.value = { enabled: result.schedule.enabled, show_announcement: result.schedule.show_announcement, start_hour: result.schedule.start_hour, end_hour: result.schedule.end_hour, start_minute: result.schedule.start_minute, end_minute: result.schedule.end_minute, timezone: result.schedule.timezone, countdown_copy: { ...result.schedule.countdown_copy } }
   }
   catch (cause) { error.value = cause.message }
   finally { loading.value = false }
@@ -52,7 +51,7 @@ async function toggle(group) {
 
 async function saveSchedule() {
   if (savingSchedule.value || !scheduleDirty.value) return
-  if (scheduleDraft.value.start_hour === scheduleDraft.value.end_hour) {
+  if (scheduleDraft.value.start_minute === scheduleDraft.value.end_minute) {
     error.value = '开始时间和结束时间不能相同'
     return
   }
@@ -64,6 +63,17 @@ async function saveSchedule() {
     emit('notify', result.error ? '定时配置已保存，分组状态将在下轮自动重试' : '福利分组定时配置已保存', Boolean(result.error))
   } catch (cause) { error.value = cause.message }
   finally { savingSchedule.value = false }
+}
+
+function minuteText(value) {
+  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`
+}
+
+function setMinute(key, value) {
+  const [hour, minute] = value.split(':').map(Number)
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return
+  scheduleDraft.value[`${key}_minute`] = hour * 60 + minute
+  scheduleDraft.value[`${key}_hour`] = hour
 }
 
 onMounted(() => {
@@ -95,8 +105,8 @@ onUnmounted(() => clearInterval(polling))
         <div class="schedule-toggle-copy"><Clock3 :size="18"/><div><strong>定时控制</strong><small>{{ scheduleState }}<template v-if="transitionText"> · 下次切换 {{ transitionText }}</template></small></div></div>
         <button type="button" class="welfare-switch" role="switch" :aria-checked="scheduleDraft.enabled" aria-label="启用福利分组定时控制" :disabled="busy" @click="scheduleDraft.enabled = !scheduleDraft.enabled"><span/></button>
         <label class="schedule-announcement-toggle"><span>erxinai 公告</span><button type="button" class="welfare-switch" role="switch" :aria-checked="scheduleDraft.show_announcement" aria-label="在 erxinai 展示福利分组公告" :disabled="busy" @click="scheduleDraft.show_announcement = !scheduleDraft.show_announcement"><span/></button></label>
-        <label>开始时间<select v-model.number="scheduleDraft.start_hour" required :disabled="busy"><option v-for="item in hours" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
-        <label>结束时间<select v-model.number="scheduleDraft.end_hour" required :disabled="busy"><option v-for="item in hours" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
+        <label>开始时间<input type="time" :value="minuteText(scheduleDraft.start_minute)" required :disabled="busy" @input="setMinute('start', $event.target.value)" /></label>
+        <label>结束时间<input type="time" :value="minuteText(scheduleDraft.end_minute)" required :disabled="busy" @input="setMinute('end', $event.target.value)" /></label>
         <div class="schedule-timezone"><small>时区</small><strong>Asia/Shanghai</strong></div>
         <div class="schedule-copy-grid">
           <label>中文开启文案<input v-model.trim="scheduleDraft.countdown_copy.zh_opening" maxlength="100" required /></label>
@@ -105,7 +115,7 @@ onUnmounted(() => clearInterval(polling))
           <label>英文关闭文案<input v-model.trim="scheduleDraft.countdown_copy.en_closing" maxlength="100" required /></label>
         </div>
         <button class="button primary" type="submit" :disabled="busy || !scheduleDirty"><Save :size="15"/>{{ savingSchedule ? '保存中…' : '保存时间段' }}</button>
-        <p>支持跨午夜，例如 22:00–08:00。开始时间生效，结束时间停用；后台每 {{ schedule.interval_seconds }} 秒检查一次。</p>
+        <p>支持精确到分钟和跨午夜，例如 22:30–08:15。开始时间生效，结束时间停用；后台每 {{ schedule.interval_seconds }} 秒检查一次。</p>
       </form>
 
       <p v-if="schedule?.error" class="notice error schedule-error">{{ schedule.error }}</p>

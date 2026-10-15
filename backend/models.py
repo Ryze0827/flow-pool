@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, SecretStr, StrictBool, field_validator
+from pydantic import BaseModel, Field, SecretStr, StrictBool, field_validator, model_validator
 
 from .model_catalog import OPENAI_MODELS
 
@@ -314,13 +314,22 @@ class WelfareSchedule(BaseModel):
     show_announcement: StrictBool = True
     start_hour: int = Field(22, strict=True, ge=0, le=23)
     end_hour: int = Field(8, strict=True, ge=0, le=23)
+    start_minute: int = Field(1320, strict=True, ge=0, le=1439)
+    end_minute: int = Field(480, strict=True, ge=0, le=1439)
     timezone: Literal['Asia/Shanghai'] = 'Asia/Shanghai'
     countdown_copy: WelfareCountdownCopy = Field(default_factory=WelfareCountdownCopy)
 
-    @field_validator('end_hour')
+    @model_validator(mode='before')
     @classmethod
-    def time_range_valid(cls, value, info):
-        if value == info.data.get('start_hour'):
+    def migrate_hour_schedule(cls, value):
+        value = dict(value)
+        if 'start_minute' not in value:
+            value['start_minute'] = value.get('start_hour', 22) * 60
+        if 'end_minute' not in value:
+            value['end_minute'] = value.get('end_hour', 8) * 60
+        value['start_hour'] = value['start_minute'] // 60
+        value['end_hour'] = value['end_minute'] // 60
+        if value['start_minute'] == value['end_minute']:
             raise ValueError('开始时间和结束时间不能相同')
         return value
 
