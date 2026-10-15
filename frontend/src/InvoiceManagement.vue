@@ -108,7 +108,7 @@ onUnmounted(() => clearInterval(polling))
       <div class="modal-body">
         <div v-if="error" class="notice error" role="alert">{{ error }}</div>
         <p class="small muted">申请编号：{{ detail.id }}</p>
-        <dl class="invoice-details"><dt>抬头</dt><dd>{{ detail.title }}</dd><dt>税号</dt><dd>{{ detail.tax_id }}</dd><dt>接收邮箱</dt><dd>{{ detail.email }}</dd><dt>订单</dt><dd>{{ detail.orders.map(order => '#' + order.id).join('、') }}</dd><dt>开票金额</dt><dd>{{ amount(detail.amount) }}</dd><dt>手续费</dt><dd>{{ amount(detail.fee) }}（{{ detail.fee_mode === 'fixed' ? '固定金额' : detail.rate + '%' }}）</dd><dt>状态</dt><dd>{{ statuses[detail.status] }}</dd></dl>
+        <dl class="invoice-details"><dt>抬头</dt><dd>{{ detail.title }}</dd><dt>开票项目</dt><dd>{{ detail.invoice_item || '未指定' }}</dd><dt>税号</dt><dd>{{ detail.tax_id }}</dd><dt>接收邮箱</dt><dd>{{ detail.email }}</dd><dt>订单</dt><dd>{{ detail.orders.map(order => '#' + order.id).join('、') }}</dd><dt>开票金额</dt><dd>{{ amount(detail.amount) }}</dd><dt>手续费</dt><dd>{{ amount(detail.fee) }}（{{ detail.fee_mode === 'fixed' ? '固定金额' : detail.rate + '%' }}）</dd><dt>状态</dt><dd>{{ statuses[detail.status] }}</dd></dl>
         <p v-if="detail.note" class="notice">{{ detail.note }}</p>
         <template v-if="detail.status === 'pending'">
           <label>审核 / 核对说明<textarea v-model.trim="note" rows="3" maxlength="500" :disabled="busy" placeholder="驳回或核对扣费结果时必填"/></label>

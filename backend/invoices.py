@@ -7,6 +7,7 @@ import sqlite3
 import time
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Literal, get_args
 
 import httpx
 from cryptography.fernet import InvalidToken
@@ -17,6 +18,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .models import MailSettings
 from .mailer import validate_mail
 from .sub2api import Sub2API, UpstreamError
+
+
+InvoiceItem = Literal[
+    '生产生活服务/大模型服务费',
+    '生产生活服务/信息服务费',
+    '信息系统服务/网络服务费',
+]
+INVOICE_ITEMS = get_args(InvoiceItem)
 
 
 def money(value):
@@ -58,6 +67,7 @@ class QuoteRequest(BaseModel):
 
 
 class InvoiceRequest(QuoteRequest):
+    invoice_item: InvoiceItem = INVOICE_ITEMS[0]
     title: str = Field(min_length=1, max_length=200)
     tax_id: str = Field(min_length=1, max_length=32, pattern=r'^[A-Za-z0-9]+$')
     email: str = Field(min_length=3, max_length=254)
@@ -224,7 +234,7 @@ class Invoices:
                 raise HTTPException(409, '余额不足，请充值后再提交')
             invoice_id, now = uuid.uuid4().hex, time.time()
             payload = {key: quote[key] for key in ('orders', 'amount', 'fee', 'fee_mode', 'currency')}
-            payload.update(title=value.title, tax_id=value.tax_id, email=value.email, user_email=user.get('email', ''))
+            payload.update(invoice_item=value.invoice_item, title=value.title, tax_id=value.tax_id, email=value.email, user_email=user.get('email', ''))
             try:
                 with self.store.db:
                     self.store.db.execute('INSERT INTO invoices(id, source, user_id, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -343,7 +353,7 @@ def invoice_router(service):
 
     @router.get('/api/invoice-user/settings')
     async def user_settings():
-        return {'enabled': service().rules().enabled}
+        return {'enabled': service().rules().enabled, 'invoice_items': INVOICE_ITEMS}
 
     @router.get('/api/invoice-user/orders')
     async def orders(request: Request, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
