@@ -52,6 +52,18 @@ class Promotions:
                 'last_check_at': self.last_check_at, 'next_check_at': self.next_check_at,
                 'error': self.error, 'interval_seconds': INTERVAL_SECONDS}
 
+    def user_schedule_status(self):
+        schedule = self.store.welfare_schedule()
+        now = datetime.now(SHANGHAI)
+        if not schedule.enabled:
+            return {'enabled': False}
+        opening = datetime.combine(now.date(), clock_time(schedule.start_hour), SHANGHAI)
+        if opening <= now:
+            opening += timedelta(days=1)
+        return {**schedule.model_dump(), 'active_now': self.scheduled_enabled(schedule, now),
+                'server_now': now.isoformat(), 'next_open_at': opening.isoformat(),
+                'next_transition_at': self.next_transition(schedule, now)}
+
     async def welfare_groups(self):
         if postgres_configured(self.store):
             async with Sub2Postgres(self.store).snapshot() as cursor:

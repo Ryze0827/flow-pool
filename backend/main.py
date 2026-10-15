@@ -331,6 +331,11 @@ async def promotion_welfare_groups():
     return await promotions.groups()
 
 
+@app.get('/api/model-plaza-user/welfare-schedule')
+async def model_plaza_user_welfare_schedule():
+    return {'schedule': promotions.user_schedule_status()}
+
+
 @app.put('/api/promotions/welfare-groups/{group_id}/status')
 async def promotion_welfare_group_status(group_id: int, value: WelfareGroupStatusRequest, request: Request):
     return await promotions.set_welfare_group_status(group_id, value.enabled, request.state.admin['id'])
