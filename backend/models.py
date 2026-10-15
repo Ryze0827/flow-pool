@@ -14,6 +14,7 @@ UsageColumn = Literal['model', 'reasoning_effort', 'group']
 class Rule(BaseModel):
     enabled: bool = False
     alert_only: bool = False
+    cooldown_requires_replacement: bool = True
     guarded_pools: list[Pool] = Field(default_factory=lambda: ['risk'], max_length=3)
     replacement_pools: list[Pool] = Field(default_factory=list, max_length=3)
     sample_size: int = Field(10, ge=1, le=100)

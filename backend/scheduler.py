@@ -169,7 +169,14 @@ class Scheduler:
             if remote.get('schedulable') is False:
                 # 上一轮停调响应丢失时，以实时上游状态确认结果，不重复发送停调。
                 self.complete_pause(self.store.account(account_id), rule, '已从上游确认停止调度')
-                await self.ensure_cooldown_coverage(client, self.store.account(account_id), rule)
+                if rule.cooldown_requires_replacement:
+                    await self.ensure_cooldown_coverage(client, self.store.account(account_id), rule)
+                else:
+                    current = self.store.account(account_id)
+                    detail = '已从上游确认停止调度；已关闭冷却前替补检查，直接进入冷却'
+                    self.record_inspection(current, 'cooldown', current['sample'], current['slow_count'],
+                                           '继续冷却', detail, rule=rule)
+                    self.notify(current, '停止调度', detail, rule)
                 return
             # 自动停调重试必须重新采样、检查当前窗口，不能沿用过期的停调意图。
             state = 'probation' if account['probation_until'] is not None else 'active'
@@ -462,12 +469,16 @@ class Scheduler:
                 self.record_inspection(account, state, account['sample'], account['slow_count'],
                                        '告警' if rule.alert_only else '暂缓停调', reason, rule=rule)
                 return
-            ready_ids, detail, replacement_id = await self.priority_ready(client, account, rule)
-            if ready_ids is None:
-                message = f"{account['reason']}；{detail}，未执行停止调度，下轮重试"
-                self.store.update(account['id'], state='probation' if account['probation_until'] is not None else 'active', resume_at=None, error=detail, reason=message)
-                self.record_inspection(account, account['state'], account['sample'], account['slow_count'], '暂缓停调', message, rule=rule)
-                return
+            if rule.cooldown_requires_replacement:
+                ready_ids, detail, replacement_id = await self.priority_ready(client, account, rule)
+                if ready_ids is None:
+                    message = f"{account['reason']}；{detail}，未执行停止调度，下轮重试"
+                    self.store.update(account['id'], state='probation' if account['probation_until'] is not None else 'active', resume_at=None, error=detail, reason=message)
+                    self.record_inspection(account, account['state'], account['sample'], account['slow_count'], '暂缓停调', message, rule=rule)
+                    return
+            else:
+                ready_ids, replacement_id = None, None
+                detail = '已关闭冷却前替补检查，直接进入冷却'
             # 替补接口可能耗时较长，发送停调前再次确认次数没有滑出窗口。
             if len(self.window_breaches(account, rule)) < rule.breach_count:
                 state = 'probation' if account['probation_until'] is not None else 'active'
@@ -490,8 +501,14 @@ class Scheduler:
             raise
         self.complete_pause(account, rule, detail)
         if automatic and not forced:
-            # 只复核本次选定的保障账号，不在冷却期间重复拉起替补。
-            await self.ensure_cooldown_coverage(client, self.store.account(account['id']), rule, replacement_id, ready_ids)
+            if rule.cooldown_requires_replacement:
+                # 只复核本次选定的保障账号，不在冷却期间重复拉起替补。
+                await self.ensure_cooldown_coverage(client, self.store.account(account['id']), rule, replacement_id, ready_ids)
+            else:
+                current = self.store.account(account['id'])
+                self.record_inspection(current, 'cooldown', current['sample'], current['slow_count'],
+                                       '继续冷却', detail, rule=rule)
+                self.notify(current, '停止调度', detail, rule)
 
     async def finish_image_pause(self, client, account, rule, ready_ids=None, replacement_id=None, detail='', migrated=False):
         if time.time() >= account['resume_at']:
@@ -520,7 +537,12 @@ class Scheduler:
         self.store.event('image_cooldown', reason, account['id'], 'warning')
         self.record_inspection(current, 'cooldown', account['sample'], account['slow_count'], '仅生图调度', reason, rule=rule, notify=migrated)
         if not migrated:
-            await self.ensure_cooldown_coverage(client, current, rule, replacement_id, ready_ids)
+            if rule.cooldown_requires_replacement:
+                await self.ensure_cooldown_coverage(client, current, rule, replacement_id, ready_ids)
+            else:
+                self.record_inspection(current, 'cooldown', current['sample'], current['slow_count'],
+                                       '继续冷却', reason, rule=rule)
+                self.notify(current, '仅生图调度', reason, rule)
 
     def complete_pause(self, account, rule, detail):
         automatic = account['resume_at'] is not None
