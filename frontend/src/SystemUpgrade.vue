@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
-import { ArrowUpCircle, ArrowUpToLine, CheckCheck, CircleAlert, CircleCheck, Info, LoaderCircle, RefreshCw, X } from 'lucide-vue-next'
+import { ArrowUpCircle, ArrowUpToLine, CircleAlert, CircleCheck, Info, LoaderCircle, RefreshCw, X } from 'lucide-vue-next'
 import { api } from './api'
 import { createUpgradePolling } from './upgradePolling'
 import { loadUpgradeStatus } from './upgradeStatus'
@@ -14,6 +14,7 @@ const submitting = ref(false)
 const error = ref('')
 const reconnecting = ref(false)
 const steps = ref(null)
+const startedJobId = ref(null)
 const timeText = value => {
   if (!value) return '—'
   const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value)
@@ -34,7 +35,7 @@ const statusView = computed(() => {
   if (!loaded.value) return error.value
     ? { tone: 'warning', icon: CircleAlert, title: '无法读取升级状态', detail: error.value }
     : { tone: 'neutral', icon: LoaderCircle, spin: true, title: '正在读取版本信息' }
-  if (upgradeDone.value) return { tone: 'success', icon: CircleCheck, title: '升级已完成', detail: '刷新页面后加载新版本。' }
+  if (upgradeDone.value) return { tone: 'success', icon: CircleCheck, title: '升级已完成', detail: '正在自动刷新页面并加载新版本。' }
   if (loading.value) return { tone: 'neutral', icon: LoaderCircle, spin: true, title: '正在检查远端版本', detail: '检查完成后会显示是否有可用更新。' }
   if (!repo.ready) return { tone: 'warning', icon: CircleAlert, title: '暂不能升级', detail: repo.reason }
   if (repo.update_available) return { tone: 'info', icon: ArrowUpCircle, title: '发现新版本', detail: `将从 ${repo.commit.slice(0, 8)} 更新到 ${repo.latest_commit.slice(0, 8)}。` }
@@ -45,6 +46,12 @@ const statusView = computed(() => {
 watch(() => state.value.job?.steps?.length, async () => {
   await nextTick()
   steps.value?.scrollTo({ top: steps.value.scrollHeight })
+})
+let reloading = false
+watch(upgradeDone, done => {
+  if (!done || reloading || state.value.job?.id !== startedJobId.value) return
+  reloading = true
+  globalThis.location.reload()
 })
 let mounted = true, fetching = false
 let requestController
@@ -89,12 +96,12 @@ async function start() {
   try {
     const job = await api('/upgrade', 'POST')
     if (!mounted) return
+    startedJobId.value = job.id
     state.value = { ...state.value, running: true, job }
     polling.schedule()
   } catch (failure) { error.value = failure.message }
   finally { submitting.value = false }
 }
-function reload() { globalThis.location.reload() }
 onUnmounted(() => {
   mounted = false
   polling.stop()
@@ -124,7 +131,7 @@ onUnmounted(() => {
       <p v-if="error" class="notice error" role="alert">{{ error }}</p>
     </div>
     <div class="modal-footer">
-      <button v-if="upgradeDone" class="button primary" @click="reload"><CheckCheck :size="16"/>刷新页面</button>
+      <span v-if="upgradeDone" class="small muted">正在自动刷新页面…</span>
       <template v-else>
         <button class="button upgrade-check" :disabled="loading || active" @click="refresh(true)"><RefreshCw :size="15" :class="{ spinning: loading }"/>检查更新</button>
         <button class="button primary" :disabled="!startable" @click="start"><LoaderCircle v-if="active" :size="16" class="spinning"/><ArrowUpToLine v-else :size="16"/>{{ active ? '正在升级…' : '开始升级' }}</button>
