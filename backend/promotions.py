@@ -13,6 +13,10 @@ from .sub2api import Sub2API, UpstreamError
 WELFARE_GROUPS_SQL = "SELECT id, name, status FROM groups WHERE deleted_at IS NULL AND platform='openai' AND name LIKE '%福利%' ORDER BY id"
 SHANGHAI = ZoneInfo('Asia/Shanghai')
 INTERVAL_SECONDS = 60
+WELFARE_COUNTDOWN_COPY = {
+    'zh': {'opening': 'Codex福利分组开启倒计时', 'closing': 'Codex福利分组关闭倒计时'},
+    'en': {'opening': 'Codex welfare groups open in', 'closing': 'Codex welfare groups close in'},
+}
 
 
 class Promotions:
@@ -62,7 +66,8 @@ class Promotions:
             opening += timedelta(days=1)
         return {**schedule.model_dump(), 'active_now': self.scheduled_enabled(schedule, now),
                 'server_now': now.isoformat(), 'next_open_at': opening.isoformat(),
-                'next_transition_at': self.next_transition(schedule, now)}
+                'next_transition_at': self.next_transition(schedule, now),
+                'countdown_copy': WELFARE_COUNTDOWN_COPY}
 
     async def welfare_groups(self):
         if postgres_configured(self.store):
