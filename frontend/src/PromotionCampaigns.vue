@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Clock3, MoonStar, RefreshCw, Save } from 'lucide-vue-next'
+import { Clock3, MoonStar, RefreshCw, Save, UserMinus, X } from 'lucide-vue-next'
 import { api } from './api'
 
 const emit = defineEmits(['notify'])
@@ -9,11 +9,19 @@ const loading = ref(false)
 const updating = ref(null)
 const savingSchedule = ref(false)
 const error = ref('')
+const removeDialog = ref(null)
+const removeTarget = ref(null)
+const members = ref([])
+const membersLoading = ref(false)
+const removing = ref(false)
+const removeError = ref('')
+const removeOutcome = ref(null)
+const removeProblems = computed(() => (removeOutcome.value?.results || []).filter(item => ['skipped', 'failed'].includes(item.status)))
 const schedule = ref(null)
 const scheduleDraft = ref({ enabled: false, show_announcement: true, start_hour: 22, end_hour: 8, start_minute: 1320, end_minute: 480, timezone: 'Asia/Shanghai', countdown_copy: { zh_opening: '', zh_closing: '', en_opening: '', en_closing: '' } })
 const enabledCount = computed(() => groups.value.filter(group => group.status === 'active').length)
 const scheduleDirty = computed(() => schedule.value && JSON.stringify(scheduleDraft.value) !== JSON.stringify({ enabled: schedule.value.enabled, show_announcement: schedule.value.show_announcement, start_hour: schedule.value.start_hour, end_hour: schedule.value.end_hour, start_minute: schedule.value.start_minute, end_minute: schedule.value.end_minute, timezone: schedule.value.timezone, countdown_copy: schedule.value.countdown_copy }))
-const busy = computed(() => loading.value || updating.value !== null || savingSchedule.value)
+const busy = computed(() => loading.value || updating.value !== null || savingSchedule.value || removing.value)
 const scheduleState = computed(() => !schedule.value?.enabled ? '未开启定时控制' : schedule.value.active_now ? '当前处于福利时段' : '当前不在福利时段')
 const transitionText = computed(() => schedule.value?.next_transition_at ? new Date(schedule.value.next_transition_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '')
 let polling
@@ -47,6 +55,31 @@ async function toggle(group) {
     await load()
     error.value = message
   } finally { updating.value = null }
+}
+
+async function openRemove(group) {
+  if (busy.value) return
+  removeTarget.value = group
+  members.value = []
+  removeError.value = ''
+  removeOutcome.value = null
+  membersLoading.value = true
+  removeDialog.value.showModal()
+  try { members.value = (await api(`/promotions/welfare-groups/${group.id}/members`)).items }
+  catch (cause) { removeError.value = cause.message }
+  finally { membersLoading.value = false }
+}
+
+async function removeMembers() {
+  if (removing.value || !members.value.length) return
+  removing.value = true
+  removeError.value = ''
+  try {
+    const result = await api(`/promotions/welfare-groups/${removeTarget.value.id}/members/remove`, 'POST')
+    removeOutcome.value = result
+    emit('notify', `${result.group.name}：更新 ${result.changed} 个，无需修改 ${result.unchanged} 个，跳过 ${result.skipped} 个，失败或未确认 ${result.failed} 个`, result.failed + result.skipped > 0)
+  } catch (cause) { removeError.value = cause.message }
+  finally { removing.value = false }
 }
 
 async function saveSchedule() {
@@ -123,11 +156,41 @@ onUnmounted(() => clearInterval(polling))
       <div v-if="groups.length" class="welfare-list">
         <div v-for="group in groups" :key="group.id" class="welfare-row">
           <div><strong>{{ group.name }}</strong><small>#{{ group.id }} · {{ group.status === 'active' ? '正常' : group.status === 'inactive' ? '已停用' : group.status || '状态未知' }}</small></div>
+          <button type="button" class="button welfare-remove" :disabled="busy" @click="openRemove(group)"><UserMinus :size="15"/>移除全部账号</button>
           <button type="button" class="welfare-switch" role="switch" :aria-checked="group.status === 'active'" :aria-label="`${group.status === 'active' ? '停用' : '启用'}${group.name}`" :title="schedule?.enabled ? '定时控制开启期间不能手动修改' : ''" :disabled="busy || schedule?.enabled || !['active', 'inactive'].includes(group.status)" @click="toggle(group)"><span/></button>
         </div>
       </div>
       <p v-else class="welfare-empty" role="status">{{ loading ? '正在读取福利分组…' : '没有名称中包含“福利”的 OpenAI 平台分组。' }}</p>
     </section>
+
+    <dialog ref="removeDialog" class="modal welfare-remove-dialog" aria-labelledby="welfare-remove-title" @cancel="removing && $event.preventDefault()">
+      <template v-if="removeTarget">
+        <div class="modal-heading"><h2 id="welfare-remove-title">移除“{{ removeTarget.name }}”的全部账号</h2><button type="button" class="icon-button" :disabled="removing" aria-label="关闭移除账号确认" @click="removeDialog.close()"><X :size="18"/></button></div>
+        <div class="modal-body">
+          <template v-if="!removeOutcome">
+            <p>将从 Sub2API 分组“{{ removeTarget.name }}”（#{{ removeTarget.id }}）解除下列账号的关联。账号的其它分组、调度开关和 FlowPool 归属保持不变，账号本身不会被删除。</p>
+            <p v-if="membersLoading" class="small muted" role="status">正在读取分组账号…</p>
+            <p v-else-if="members.length" class="small">共 {{ members.length }} 个账号</p>
+            <p v-else-if="!removeError" class="small muted" role="status">该分组当前没有账号。</p>
+            <div v-if="members.length" class="welfare-member-list"><div v-for="member in members" :key="member.id">{{ member.name }} <small class="muted">#{{ member.id }}</small></div></div>
+            <p class="small muted">仅生图冷却保护或正在切换调度状态的账号会被跳过，并在结果中反馈。</p>
+          </template>
+          <template v-else>
+            <p role="status">移除结果：更新 {{ removeOutcome.changed }} · 无需修改 {{ removeOutcome.unchanged }} · 跳过 {{ removeOutcome.skipped }} · 失败 / 未确认 {{ removeOutcome.failed }}</p>
+            <div v-if="removeProblems.length" class="welfare-member-list"><div v-for="item in removeProblems" :key="item.id">{{ item.name }} <small class="muted">#{{ item.id }} · {{ item.error }}</small></div></div>
+          </template>
+          <p v-if="removeError" class="notice error" role="alert">{{ removeError }}</p>
+          <p v-if="removing" class="notice" role="status">正在逐批移除并核对结果，请等待完成…</p>
+        </div>
+        <div class="modal-footer">
+          <template v-if="!removeOutcome">
+            <button type="button" class="button" :disabled="removing" @click="removeDialog.close()">取消</button>
+            <button type="button" class="button primary" :disabled="removing || membersLoading || !members.length" @click="removeMembers">{{ removing ? '处理中…' : `移除 ${members.length} 个账号` }}</button>
+          </template>
+          <button v-else type="button" class="button" @click="removeDialog.close()">关闭</button>
+        </div>
+      </template>
+    </dialog>
   </div>
 </template>
 
@@ -170,6 +233,13 @@ onUnmounted(() => clearInterval(polling))
 .welfare-switch[aria-checked='true'] span { transform: translateX(1.2rem); }
 .welfare-switch:disabled { opacity: .55; cursor: not-allowed; }
 .welfare-empty { margin: 0; padding: 2.5rem 1.5rem; border-top: 1px solid var(--border); color: var(--muted); text-align: center; font-size: .875rem; }
+.welfare-remove { flex-shrink: 0; white-space: nowrap; }
+.welfare-remove-dialog { margin: auto; padding: 0; color: var(--text); width: min(560px, calc(100vw - 24px)); max-height: 90dvh; overflow-y: auto; }
+.welfare-remove-dialog:not([open]) { display: none; }
+.welfare-remove-dialog::backdrop { background: #21304a3b; }
+.welfare-remove-dialog .modal-body { padding: 0 24px 20px; overflow-wrap: anywhere; }
+.welfare-member-list { max-height: 240px; overflow: auto; margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 3%, Canvas); font-size: 13px; }
+.welfare-member-list > div { padding: 5px 0; }
 @media (max-width: 1050px) { .welfare-schedule { grid-template-columns: minmax(12rem, 1fr) auto 1fr 1fr; } .schedule-timezone { grid-column: 1 / 3; } }
 @media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-icon { display: none; } .welfare-schedule { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule label { grid-column: span 1; } .schedule-timezone { grid-column: 1 / 2; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button { grid-column: 1 / -1; } }
 </style>

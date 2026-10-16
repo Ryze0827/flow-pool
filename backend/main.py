@@ -341,6 +341,19 @@ async def promotion_welfare_group_status(group_id: int, value: WelfareGroupStatu
     return await promotions.set_welfare_group_status(group_id, value.enabled, request.state.admin['id'])
 
 
+@app.get('/api/promotions/welfare-groups/{group_id}/members')
+async def promotion_welfare_group_members(group_id: int):
+    return await promotions.group_members(group_id)
+
+
+@app.post('/api/promotions/welfare-groups/{group_id}/members/remove')
+async def promotion_welfare_group_members_remove(group_id: int, request: Request):
+    if scheduler.lock.locked():
+        raise HTTPException(409, '调度检查或其它账号操作正在进行，请稍后重试')
+    async with scheduler.lock:
+        return await promotions.remove_group_members(group_id, request.state.admin['id'])
+
+
 @app.put('/api/promotions/welfare-schedule')
 async def promotion_welfare_schedule(value: WelfareSchedule, request: Request):
     return await promotions.save_schedule(value, request.state.admin['id'])

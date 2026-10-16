@@ -7,8 +7,9 @@ from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 
 from . import updater
+from .advanced_groups import AdvancedGroups
 from .postgres import Sub2Postgres, postgres_configured
-from .sub2api import Sub2API, UpstreamError
+from .sub2api import Sub2API, UpstreamError, image_only_account, public_account
 
 WELFARE_GROUPS_SQL = "SELECT id, name, status FROM groups WHERE deleted_at IS NULL AND platform='openai' AND name LIKE '%福利%' ORDER BY id"
 SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -104,6 +105,71 @@ class Promotions:
         if result['verified']:
             action = '启用' if enabled else '停用'
             self.store.event('welfare_group', f"管理员 #{owner_id} 已{action}夜间福利分组 {result['name']}（#{group_id}）")
+        return result
+
+    async def welfare_group_name(self, group_id):
+        current = {group['id']: group for group in await self.welfare_groups()}
+        if group_id not in current:
+            raise HTTPException(409, '该分组已删除、改名或不属于 GPT / OpenAI 平台，请刷新后重试')
+        return current[group_id]['name']
+
+    async def group_members(self, group_id):
+        name = await self.welfare_group_name(group_id)
+        async with Sub2API(self.store.settings()) as client:
+            members = await self.members(client, group_id)
+        return {'group': {'id': group_id, 'name': name},
+                'items': [{'id': account['id'], 'name': account.get('name', '')} for account in members]}
+
+    async def remove_group_members(self, group_id, owner_id):
+        name = await self.welfare_group_name(group_id)
+        async with Sub2API(self.store.settings()) as client:
+            members = await self.members(client, group_id)
+            results = []
+            for offset in range(0, len(members), 4):
+                results.extend(await asyncio.gather(*(
+                    self.remove_member(client, account, group_id)
+                    for account in members[offset:offset + 4])))
+        counts = {status: sum(item['status'] == status for item in results)
+                  for status in ('changed', 'unchanged', 'skipped', 'failed')}
+        self.store.event('welfare_group_members', f"管理员 #{owner_id} 已移除夜间福利分组 {name}（#{group_id}）的账号："
+                         f"更新 {counts['changed']} 个，无需修改 {counts['unchanged']} 个，"
+                         f"跳过 {counts['skipped']} 个，失败或未确认 {counts['failed']} 个",
+                         level='warning' if counts['skipped'] or counts['failed'] else 'info')
+        return {'group': {'id': group_id, 'name': name}, **counts, 'results': results}
+
+    @staticmethod
+    async def members(client, group_id):
+        return [account for account in await client.accounts()
+                if group_id in ({group['id'] for group in account.get('groups') or []} | set(account.get('group_ids') or []))]
+
+    async def remove_member(self, client, account, group_id):
+        result = {'id': account['id'], 'name': account.get('name', ''), 'status': 'failed', 'error': ''}
+        try:
+            local = self.store.account(account['id'])
+            if local and local['state'] in {'pausing', 'resuming'}:
+                return {**result, 'status': 'skipped', 'error': '账号正在切换调度状态，请完成后重试'}
+            remote = await client.account(account['id'])
+            before = AdvancedGroups.memberships(remote)
+            after = before - {group_id}
+            if before == after:
+                if local:
+                    self.store.update(account['id'], remote=public_account(remote))
+                return {**result, 'status': 'unchanged'}
+            if local and local['state'] == 'cooldown' and (
+                    local.get('cooldown_mode') == 'image'
+                    or (local['pool'] == 'third_party' and image_only_account(remote))):
+                return {**result, 'status': 'skipped', 'error': '账号处于仅生图冷却保护，冷却结束后可重试'}
+            await client.request('PUT', f"accounts/{account['id']}", json={'group_ids': sorted(after)})
+            verified = await client.account(account['id'])
+            if AdvancedGroups.memberships(verified) != after:
+                raise UpstreamError('上游分组修改尚未确认，请刷新后重试', 409)
+            if local:
+                self.store.update(account['id'], remote=public_account(verified))
+            return {**result, 'status': 'changed'}
+        except UpstreamError as cause:
+            result['error'] = cause.message
+        except Exception:
+            result['error'] = '操作失败或结果未确认，请刷新后重试'
         return result
 
     async def update(self, group_id, name, enabled):
