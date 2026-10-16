@@ -20,7 +20,8 @@ const loading = ref(false)
 const error = ref('')
 const statuses = { pending: '待审核', rejected: '已驳回', approved: '待上传', issued: '已开票' }
 const mailStatuses = { pending: '待发送', sending: '发送中', sent: '已提交 SMTP', failed: '发送失败', skipped: '已取消' }
-const amount = value => `$${Number(value).toFixed(2)}`
+const amountValue = value => Number(value).toFixed(2)
+const amount = value => `$${amountValue(value)}`
 const timeText = value => new Date(value * 1000).toLocaleString('zh-CN', { hour12: false })
 let polling
 
@@ -65,7 +66,7 @@ async function copyInvoice() {
   const text = [
     `抬头：${item.title}`,
     `税号：${item.tax_id}`,
-    `金额：${amount(item.amount)} USD`,
+    `金额：${amountValue(item.amount)}`,
     `项目：${item.invoice_item || defaultInvoiceItem}`,
   ].join('\n')
   try {
