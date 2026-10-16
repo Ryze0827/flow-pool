@@ -56,14 +56,12 @@ class Promotions:
     def user_schedule_status(self):
         schedule = self.store.welfare_schedule()
         now = datetime.now(SHANGHAI)
-        if not schedule.enabled:
-            return {'enabled': False}
         opening = datetime.combine(now.date(), clock_time(schedule.start_minute // 60, schedule.start_minute % 60), SHANGHAI)
         if opening <= now:
             opening += timedelta(days=1)
-        return {**schedule.model_dump(), 'active_now': self.scheduled_enabled(schedule, now),
+        return {**schedule.model_dump(), 'active_now': self.scheduled_enabled(schedule, now) if schedule.enabled else None,
                 'server_now': now.isoformat(), 'next_open_at': opening.isoformat(),
-                'next_transition_at': self.next_transition(schedule, now),
+                'next_transition_at': self.next_transition(schedule, now) if schedule.enabled else None,
                 'countdown_copy': {
                     'zh': {'opening': schedule.countdown_copy.zh_opening, 'closing': schedule.countdown_copy.zh_closing},
                     'en': {'opening': schedule.countdown_copy.en_opening, 'closing': schedule.countdown_copy.en_closing},
