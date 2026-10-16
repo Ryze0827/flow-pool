@@ -11,7 +11,7 @@ from .advanced_groups import AdvancedGroups
 from .postgres import Sub2Postgres, postgres_configured
 from .sub2api import Sub2API, UpstreamError, image_only_account, public_account
 
-WELFARE_GROUPS_SQL = "SELECT id, name, status FROM groups WHERE deleted_at IS NULL AND platform='openai' AND name LIKE '%福利%' ORDER BY id"
+OPENAI_GROUPS_SQL = "SELECT id, name, status FROM groups WHERE deleted_at IS NULL AND platform='openai' ORDER BY id"
 SHANGHAI = ZoneInfo('Asia/Shanghai')
 INTERVAL_SECONDS = 60
 
@@ -67,20 +67,25 @@ class Promotions:
                     'en': {'opening': schedule.countdown_copy.en_opening, 'closing': schedule.countdown_copy.en_closing},
                 }}
 
-    async def welfare_groups(self):
+    async def openai_groups(self):
         if postgres_configured(self.store):
             async with Sub2Postgres(self.store).snapshot() as cursor:
-                await cursor.execute(WELFARE_GROUPS_SQL)
+                await cursor.execute(OPENAI_GROUPS_SQL)
                 groups = await cursor.fetchall()
         else:
             async with Sub2API(self.store.settings()) as client:
                 groups = [group for group in await client.all('groups', platform='openai')
                           if group.get('platform') == 'openai' and not group.get('deleted_at')
-                          and '福利' in (group.get('name') or '')]
+                          ]
         return [{'id': group['id'], 'name': group['name'], 'status': group.get('status', '')} for group in groups]
 
+    async def welfare_groups(self):
+        return [group for group in await self.openai_groups() if '福利' in (group.get('name') or '')]
+
     async def groups(self):
-        return {'items': await self.welfare_groups(), 'schedule': self.schedule_status()}
+        source_groups = await self.openai_groups()
+        return {'items': [group for group in source_groups if '福利' in (group.get('name') or '')],
+                'source_groups': source_groups, 'schedule': self.schedule_status()}
 
     async def save_schedule(self, value, owner_id):
         async with self.lock:
@@ -135,6 +140,30 @@ class Promotions:
                          level='warning' if counts['skipped'] or counts['failed'] else 'info')
         return {'group': {'id': group_id, 'name': name}, **counts, 'results': results}
 
+    async def copy_group_members(self, group_id, source_group_id, owner_id):
+        name = await self.welfare_group_name(group_id)
+        source_groups = {group['id']: group for group in await self.openai_groups()}
+        if source_group_id not in source_groups:
+            raise HTTPException(409, '来源分组已删除、改名或不属于 GPT / OpenAI 平台，请刷新后重试')
+        if source_group_id == group_id:
+            raise HTTPException(409, '来源分组不能与夜间福利分组相同')
+        source_name = source_groups[source_group_id]['name']
+        async with Sub2API(self.store.settings()) as client:
+            members = await self.members(client, source_group_id)
+            results = []
+            for offset in range(0, len(members), 4):
+                results.extend(await asyncio.gather(*(
+                    self.copy_member(client, account, group_id)
+                    for account in members[offset:offset + 4])))
+        counts = {status: sum(item['status'] == status for item in results)
+                  for status in ('changed', 'unchanged', 'skipped', 'failed')}
+        self.store.event('welfare_group_members_copy', f"管理员 #{owner_id} 已从分组 {source_name}（#{source_group_id}）复制账号到夜间福利分组 {name}（#{group_id}）："
+                         f"更新 {counts['changed']} 个，无需修改 {counts['unchanged']} 个，"
+                         f"跳过 {counts['skipped']} 个，失败或未确认 {counts['failed']} 个",
+                         level='warning' if counts['skipped'] or counts['failed'] else 'info')
+        return {'group': {'id': group_id, 'name': name},
+                'source_group': {'id': source_group_id, 'name': source_name}, **counts, 'results': results}
+
     @staticmethod
     async def members(client, group_id):
         return [account for account in await client.accounts()
@@ -157,6 +186,36 @@ class Promotions:
                     local.get('cooldown_mode') == 'image'
                     or (local['pool'] == 'third_party' and image_only_account(remote))):
                 return {**result, 'status': 'skipped', 'error': '账号处于仅生图冷却保护，冷却结束后可重试'}
+            await client.request('PUT', f"accounts/{account['id']}", json={'group_ids': sorted(after)})
+            verified = await client.account(account['id'])
+            if AdvancedGroups.memberships(verified) != after:
+                raise UpstreamError('上游分组修改尚未确认，请刷新后重试', 409)
+            if local:
+                self.store.update(account['id'], remote=public_account(verified))
+            return {**result, 'status': 'changed'}
+        except UpstreamError as cause:
+            result['error'] = cause.message
+        except Exception:
+            result['error'] = '操作失败或结果未确认，请刷新后重试'
+        return result
+
+    async def copy_member(self, client, account, group_id):
+        result = {'id': account['id'], 'name': account.get('name', ''), 'status': 'failed', 'error': ''}
+        try:
+            local = self.store.account(account['id'])
+            if local and local['state'] in {'pausing', 'resuming'}:
+                return {**result, 'status': 'skipped', 'error': '账号正在切换调度状态，请完成后重试'}
+            remote = await client.account(account['id'])
+            before = AdvancedGroups.memberships(remote)
+            if group_id in before:
+                if local:
+                    self.store.update(account['id'], remote=public_account(remote))
+                return {**result, 'status': 'unchanged'}
+            if local and local['state'] == 'cooldown' and (
+                    local.get('cooldown_mode') == 'image'
+                    or (local['pool'] == 'third_party' and image_only_account(remote))):
+                return {**result, 'status': 'skipped', 'error': '账号处于仅生图冷却保护，冷却结束后可重试'}
+            after = before | {group_id}
             await client.request('PUT', f"accounts/{account['id']}", json={'group_ids': sorted(after)})
             verified = await client.account(account['id'])
             if AdvancedGroups.memberships(verified) != after:

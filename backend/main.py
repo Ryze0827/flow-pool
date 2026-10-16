@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, WelfareSchedule, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, WelfareGroupCopyRequest, WelfareSchedule, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -352,6 +352,14 @@ async def promotion_welfare_group_members_remove(group_id: int, request: Request
         raise HTTPException(409, '调度检查或其它账号操作正在进行，请稍后重试')
     async with scheduler.lock:
         return await promotions.remove_group_members(group_id, request.state.admin['id'])
+
+
+@app.post('/api/promotions/welfare-groups/{group_id}/members/copy')
+async def promotion_welfare_group_members_copy(group_id: int, value: WelfareGroupCopyRequest, request: Request):
+    if scheduler.lock.locked():
+        raise HTTPException(409, '调度检查或其它账号操作正在进行，请稍后重试')
+    async with scheduler.lock:
+        return await promotions.copy_group_members(group_id, value.source_group_id, request.state.admin['id'])
 
 
 @app.put('/api/promotions/welfare-schedule')

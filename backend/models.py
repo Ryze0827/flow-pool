@@ -303,6 +303,10 @@ class WelfareGroupStatusRequest(BaseModel):
     enabled: StrictBool
 
 
+class WelfareGroupCopyRequest(BaseModel):
+    source_group_id: Annotated[int, Field(strict=True, ge=1, le=9223372036854775807)]
+
+
 class WelfareCountdownCopy(BaseModel):
     zh_opening: str = Field('Codex福利分组开启倒计时', min_length=1, max_length=100)
     zh_closing: str = Field('Codex福利分组关闭倒计时', min_length=1, max_length=100)

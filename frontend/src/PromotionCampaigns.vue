@@ -1,10 +1,12 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Clock3, MoonStar, RefreshCw, Save, UserMinus, X } from 'lucide-vue-next'
+import { Clock3, Copy, MoonStar, RefreshCw, Save, UserMinus, X } from 'lucide-vue-next'
 import { api } from './api'
 
 const emit = defineEmits(['notify'])
 const groups = ref([])
+const sourceGroups = ref([])
+const copySourceByTarget = ref({})
 const loading = ref(false)
 const updating = ref(null)
 const savingSchedule = ref(false)
@@ -14,6 +16,7 @@ const removeTarget = ref(null)
 const members = ref([])
 const membersLoading = ref(false)
 const removing = ref(false)
+const copying = ref(null)
 const removeError = ref('')
 const removeOutcome = ref(null)
 const removeProblems = computed(() => (removeOutcome.value?.results || []).filter(item => ['skipped', 'failed'].includes(item.status)))
@@ -21,7 +24,7 @@ const schedule = ref(null)
 const scheduleDraft = ref({ enabled: false, show_announcement: true, start_hour: 22, end_hour: 8, start_minute: 1320, end_minute: 480, timezone: 'Asia/Shanghai', countdown_copy: { zh_opening: '', zh_closing: '', en_opening: '', en_closing: '' } })
 const enabledCount = computed(() => groups.value.filter(group => group.status === 'active').length)
 const scheduleDirty = computed(() => schedule.value && JSON.stringify(scheduleDraft.value) !== JSON.stringify({ enabled: schedule.value.enabled, show_announcement: schedule.value.show_announcement, start_hour: schedule.value.start_hour, end_hour: schedule.value.end_hour, start_minute: schedule.value.start_minute, end_minute: schedule.value.end_minute, timezone: schedule.value.timezone, countdown_copy: schedule.value.countdown_copy }))
-const busy = computed(() => loading.value || updating.value !== null || savingSchedule.value || removing.value)
+const busy = computed(() => loading.value || updating.value !== null || savingSchedule.value || removing.value || copying.value !== null)
 const scheduleState = computed(() => !schedule.value?.enabled ? '未开启定时控制' : schedule.value.active_now ? '当前处于福利时段' : '当前不在福利时段')
 const transitionText = computed(() => schedule.value?.next_transition_at ? new Date(schedule.value.next_transition_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '')
 let polling
@@ -33,6 +36,7 @@ async function load() {
   try {
     const result = await api('/promotions/welfare-groups')
     groups.value = result.items
+    sourceGroups.value = result.source_groups || result.items
     schedule.value = result.schedule
     scheduleDraft.value = { enabled: result.schedule.enabled, show_announcement: result.schedule.show_announcement, start_hour: result.schedule.start_hour, end_hour: result.schedule.end_hour, start_minute: result.schedule.start_minute, end_minute: result.schedule.end_minute, timezone: result.schedule.timezone, countdown_copy: { ...result.schedule.countdown_copy } }
   }
@@ -80,6 +84,18 @@ async function removeMembers() {
     emit('notify', `${result.group.name}：更新 ${result.changed} 个，无需修改 ${result.unchanged} 个，跳过 ${result.skipped} 个，失败或未确认 ${result.failed} 个`, result.failed + result.skipped > 0)
   } catch (cause) { removeError.value = cause.message }
   finally { removing.value = false }
+}
+
+async function copyMembers(group) {
+  const sourceGroupId = Number(copySourceByTarget.value[group.id])
+  if (!sourceGroupId || copying.value !== null) return
+  copying.value = group.id
+  error.value = ''
+  try {
+    const result = await api(`/promotions/welfare-groups/${group.id}/members/copy`, 'POST', { source_group_id: sourceGroupId })
+    emit('notify', `${result.source_group.name} → ${result.group.name}：更新 ${result.changed} 个，无需修改 ${result.unchanged} 个，跳过 ${result.skipped} 个，失败或未确认 ${result.failed} 个`, result.failed + result.skipped > 0)
+  } catch (cause) { error.value = cause.message }
+  finally { copying.value = null }
 }
 
 async function saveSchedule() {
@@ -156,6 +172,13 @@ onUnmounted(() => clearInterval(polling))
       <div v-if="groups.length" class="welfare-list">
         <div v-for="group in groups" :key="group.id" class="welfare-row">
           <div><strong>{{ group.name }}</strong><small>#{{ group.id }} · {{ group.status === 'active' ? '正常' : group.status === 'inactive' ? '已停用' : group.status || '状态未知' }}</small></div>
+          <div class="welfare-copy">
+            <select :value="copySourceByTarget[group.id] || ''" :disabled="busy" :aria-label="`选择复制到${group.name}的来源分组`" @change="copySourceByTarget[group.id] = Number($event.target.value) || null">
+              <option value="">选择来源分组</option>
+              <template v-for="source in sourceGroups" :key="source.id"><option v-if="source.id !== group.id" :value="source.id">{{ source.name }}（#{{ source.id }}）</option></template>
+            </select>
+            <button type="button" class="button welfare-copy-button" :disabled="busy || !copySourceByTarget[group.id]" @click="copyMembers(group)"><Copy :size="15"/>拷贝账号</button>
+          </div>
           <button type="button" class="button welfare-remove" :disabled="busy" @click="openRemove(group)"><UserMinus :size="15"/>移除全部账号</button>
           <button type="button" class="welfare-switch" role="switch" :aria-checked="group.status === 'active'" :aria-label="`${group.status === 'active' ? '停用' : '启用'}${group.name}`" :title="schedule?.enabled ? '定时控制开启期间不能手动修改' : ''" :disabled="busy || schedule?.enabled || !['active', 'inactive'].includes(group.status)" @click="toggle(group)"><span/></button>
         </div>
@@ -234,6 +257,9 @@ onUnmounted(() => clearInterval(polling))
 .welfare-switch:disabled { opacity: .55; cursor: not-allowed; }
 .welfare-empty { margin: 0; padding: 2.5rem 1.5rem; border-top: 1px solid var(--border); color: var(--muted); text-align: center; font-size: .875rem; }
 .welfare-remove { flex-shrink: 0; white-space: nowrap; }
+.welfare-copy { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; }
+.welfare-copy select { width: 13rem; }
+.welfare-copy-button { white-space: nowrap; }
 .welfare-remove-dialog { margin: auto; padding: 0; color: var(--text); width: min(560px, calc(100vw - 24px)); max-height: 90dvh; overflow-y: auto; }
 .welfare-remove-dialog:not([open]) { display: none; }
 .welfare-remove-dialog::backdrop { background: #21304a3b; }
@@ -241,5 +267,5 @@ onUnmounted(() => clearInterval(polling))
 .welfare-member-list { max-height: 240px; overflow: auto; margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 3%, Canvas); font-size: 13px; }
 .welfare-member-list > div { padding: 5px 0; }
 @media (max-width: 1050px) { .welfare-schedule { grid-template-columns: minmax(12rem, 1fr) auto 1fr 1fr; } .schedule-timezone { grid-column: 1 / 3; } }
-@media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-icon { display: none; } .welfare-schedule { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule label { grid-column: span 1; } .schedule-timezone { grid-column: 1 / 2; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button { grid-column: 1 / -1; } }
+@media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-row { flex-wrap: wrap; } .welfare-row > div:first-child { flex-basis: 100%; } .welfare-copy { flex: 1; min-width: 0; } .welfare-copy select { flex: 1; width: auto; min-width: 0; } .welfare-icon { display: none; } .welfare-schedule { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule label { grid-column: span 1; } .schedule-timezone { grid-column: 1 / 2; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button { grid-column: 1 / -1; } }
 </style>
