@@ -100,6 +100,10 @@ class Store:
                 if name == 'cooldown_count':
                     # 已有冷却保留截止时间，计作首次；之后再次冷却使用第二档。
                     self.db.execute("UPDATE accounts SET cooldown_count=1 WHERE resume_at IS NOT NULL AND state IN ('cooldown', 'resuming')")
+        existing = {row['name'] for row in self.db.execute('PRAGMA table_info(checkins)')}
+        for name, definition in {'reward_amount': 'REAL NOT NULL DEFAULT 0', 'reward_status': "TEXT NOT NULL DEFAULT 'none'"}.items():
+            if name not in existing:
+                self.db.execute(f'ALTER TABLE checkins ADD COLUMN {name} {definition}')
         self.db.commit()
 
     def seal(self, value):
@@ -193,24 +197,40 @@ class Store:
         return {'checked_in_today': bool(row), 'streak': current_streak,
                 'last_checkin_date': latest['checkin_date'] if latest else None, 'today': today.isoformat()}
 
-    def record_checkin(self, user_id):
+    def record_checkin(self, user_id, reward_amount=0):
         today = self.checkin_today()
         today_text = today.isoformat()
         with self.db:
-            existing = self.db.execute('SELECT streak FROM checkins WHERE user_id=? AND checkin_date=?',
+            existing = self.db.execute('SELECT streak, reward_amount, reward_status FROM checkins WHERE user_id=? AND checkin_date=?',
                                        (user_id, today_text)).fetchone()
             if existing:
                 return {'checked_in_today': True, 'streak': existing['streak'], 'created': False,
-                        'checkin_date': today_text}
+                        'checkin_date': today_text, 'reward_amount': existing['reward_amount'],
+                        'reward_status': existing['reward_status']}
             previous = self.db.execute('SELECT streak FROM checkins WHERE user_id=? AND checkin_date=?',
                                        (user_id, (today - timedelta(days=1)).isoformat())).fetchone()
             streak = (previous['streak'] + 1) if previous else 1
-            cursor = self.db.execute('INSERT OR IGNORE INTO checkins(user_id, checkin_date, streak, created_at) VALUES (?, ?, ?, ?)',
-                                     (user_id, today_text, streak, time.time()))
+            reward_amount = float(reward_amount)
+            reward_status = 'pending' if reward_amount > 0 else 'none'
+            cursor = self.db.execute('''INSERT OR IGNORE INTO checkins(
+                user_id, checkin_date, streak, reward_amount, reward_status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)''',
+                                     (user_id, today_text, streak, reward_amount, reward_status, time.time()))
             if not cursor.rowcount:
-                streak = self.db.execute('SELECT streak FROM checkins WHERE user_id=? AND checkin_date=?',
-                                         (user_id, today_text)).fetchone()['streak']
-        return {'checked_in_today': True, 'streak': streak, 'created': bool(cursor.rowcount), 'checkin_date': today_text}
+                existing = self.db.execute('SELECT streak, reward_amount, reward_status FROM checkins WHERE user_id=? AND checkin_date=?',
+                                         (user_id, today_text)).fetchone()
+                return {'checked_in_today': True, 'streak': existing['streak'], 'created': False,
+                        'checkin_date': today_text, 'reward_amount': existing['reward_amount'],
+                        'reward_status': existing['reward_status']}
+        return {'checked_in_today': True, 'streak': streak, 'created': bool(cursor.rowcount), 'checkin_date': today_text,
+                'reward_amount': reward_amount, 'reward_status': reward_status}
+
+    def update_checkin_reward(self, user_id, checkin_date, status):
+        if status not in {'none', 'pending', 'credited', 'failed', 'uncertain'}:
+            raise ValueError('Invalid check-in reward status')
+        self.db.execute('UPDATE checkins SET reward_status=? WHERE user_id=? AND checkin_date=?',
+                        (status, user_id, checkin_date))
+        self.db.commit()
 
     def checkin_counts(self, limit=30):
         today = self.checkin_today()

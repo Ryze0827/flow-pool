@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, WelfareGroupCopyRequest, WelfareSchedule, CheckInSettings, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, WelfareGroupRateRequest, WelfareGroupCopyRequest, WelfareSchedule, CheckInSettings, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -343,7 +343,7 @@ async def model_plaza_user_checkin(request: Request):
 
 @app.post('/api/model-plaza-user/check-in')
 async def model_plaza_user_checkin_submit(request: Request):
-    return promotions.user_checkin(request.state.invoice_user['id'])
+    return await promotions.user_checkin(request.state.invoice_user['id'])
 
 
 @app.get('/api/promotions/check-in')
@@ -359,6 +359,11 @@ async def promotion_checkin_save(value: CheckInSettings, request: Request):
 @app.put('/api/promotions/welfare-groups/{group_id}/status')
 async def promotion_welfare_group_status(group_id: int, value: WelfareGroupStatusRequest, request: Request):
     return await promotions.set_welfare_group_status(group_id, value.enabled, request.state.admin['id'])
+
+
+@app.put('/api/promotions/welfare-groups/{group_id}/rate')
+async def promotion_welfare_group_rate(group_id: int, value: WelfareGroupRateRequest, request: Request):
+    return await promotions.set_welfare_group_rate(group_id, value.rate_multiplier, request.state.admin['id'])
 
 
 @app.get('/api/promotions/welfare-groups/{group_id}/members')

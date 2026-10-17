@@ -11,7 +11,7 @@ from .advanced_groups import AdvancedGroups
 from .postgres import Sub2Postgres, postgres_configured
 from .sub2api import Sub2API, UpstreamError, image_only_account, public_account
 
-OPENAI_GROUPS_SQL = "SELECT id, name, status FROM groups WHERE deleted_at IS NULL AND platform='openai' ORDER BY id"
+OPENAI_GROUPS_SQL = "SELECT id, name, status, rate_multiplier FROM groups WHERE deleted_at IS NULL AND platform='openai' ORDER BY id"
 SHANGHAI = ZoneInfo('Asia/Shanghai')
 INTERVAL_SECONDS = 60
 
@@ -20,6 +20,7 @@ class Promotions:
     def __init__(self, store):
         self.store = store
         self.lock = asyncio.Lock()
+        self.checkin_lock = asyncio.Lock()
         self.last_check_at = None
         self.next_check_at = None
         self.error = ''
@@ -65,14 +66,41 @@ class Promotions:
     def user_checkin_status(self, user_id):
         settings = self.store.checkin_settings()
         return {'enabled': settings.enabled, 'min_streak_days': settings.min_streak_days,
-                'max_streak_days': settings.max_streak_days, **self.store.checkin_status(user_id)}
+                'max_streak_days': settings.max_streak_days, 'reward_amount': settings.reward_amount,
+                **self.store.checkin_status(user_id)}
 
-    def user_checkin(self, user_id):
-        settings = self.store.checkin_settings()
-        if not settings.enabled:
-            raise HTTPException(409, '签到活动暂未开启')
-        result = self.store.record_checkin(user_id)
-        return {**self.user_checkin_status(user_id), **result, 'last_checkin_date': result['checkin_date']}
+    async def user_checkin(self, user_id):
+        async with self.checkin_lock:
+            settings = self.store.checkin_settings()
+            if not settings.enabled:
+                raise HTTPException(409, '签到活动暂未开启')
+            current = self.store.checkin_status(user_id)
+            if current['checked_in_today']:
+                result = self.store.record_checkin(user_id)
+            else:
+                yesterday = (self.store.checkin_today() - timedelta(days=1)).isoformat()
+                streak = current['streak'] + 1 if current['last_checkin_date'] == yesterday else 1
+                reward = settings.reward_amount if settings.min_streak_days <= streak <= settings.max_streak_days else 0
+                result = self.store.record_checkin(user_id, reward)
+            rewarded_now = False
+            if result['reward_status'] in {'pending', 'uncertain'}:
+                reward_key = f"flowpool-checkin-{user_id}-{result['checkin_date']}"
+                try:
+                    async with Sub2API(self.store.settings()) as client:
+                        await client.request('POST', f'users/{user_id}/balance',
+                                             headers={'Idempotency-Key': reward_key},
+                                             json={'balance': result['reward_amount'], 'operation': 'add',
+                                                   'notes': f"每日签到奖励 {result['checkin_date']} · 连续 {result['streak']} 天"})
+                except asyncio.CancelledError:
+                    raise
+                except UpstreamError:
+                    self.store.update_checkin_reward(user_id, result['checkin_date'], 'uncertain')
+                    raise
+                self.store.update_checkin_reward(user_id, result['checkin_date'], 'credited')
+                result['reward_status'] = 'credited'
+                rewarded_now = True
+            return {**self.user_checkin_status(user_id), **result, 'last_checkin_date': result['checkin_date'],
+                    'rewarded': rewarded_now}
 
     def save_checkin_settings(self, value, owner_id):
         self.store.save_checkin_settings(value)
@@ -103,7 +131,7 @@ class Promotions:
                 groups = [group for group in await client.all('groups', platform='openai')
                           if group.get('platform') == 'openai' and not group.get('deleted_at')
                           ]
-        return [{'id': group['id'], 'name': group['name'], 'status': group.get('status', '')} for group in groups]
+        return [{'id': group['id'], 'name': group['name'], 'status': group.get('status', ''), 'rate_multiplier': group.get('rate_multiplier', 1)} for group in groups]
 
     async def welfare_groups(self):
         return [group for group in await self.openai_groups() if '福利' in (group.get('name') or '')]
@@ -134,6 +162,19 @@ class Promotions:
         if result['verified']:
             action = '启用' if enabled else '停用'
             self.store.event('welfare_group', f"管理员 #{owner_id} 已{action}夜间福利分组 {result['name']}（#{group_id}）")
+        return result
+
+    async def set_welfare_group_rate(self, group_id, rate_multiplier, owner_id):
+        if self.lock.locked():
+            raise HTTPException(409, '正在更新福利分组，请稍后重试')
+        async with self.lock:
+            current = {group['id']: group for group in await self.welfare_groups()}
+            if group_id not in current:
+                raise HTTPException(409, '该分组已删除、改名或不属于 GPT / OpenAI 平台，请刷新后重试')
+            async with Sub2API(self.store.settings()) as client:
+                result = await self.update_rate_with_client(client, group_id, current[group_id]['name'], rate_multiplier)
+        if result['verified']:
+            self.store.event('welfare_group_rate', f"管理员 #{owner_id} 已更新夜间福利分组 {result['name']}（#{group_id}）倍率为 {rate_multiplier:g}")
         return result
 
     async def welfare_group_name(self, group_id):
@@ -279,6 +320,29 @@ class Promotions:
             error = '写入后复核不一致，分组可能已被其他管理员修改'
         return {'id': group_id, 'name': body.get('name', name) if isinstance(body, dict) else name,
                 'status': stored, 'verified': verified, 'error': error}
+
+    async def update_rate_with_client(self, client, group_id, name, rate_multiplier):
+        error = ''
+        try:
+            await client.request('PUT', f'groups/{group_id}', json={'rate_multiplier': rate_multiplier})
+        except UpstreamError as cause:
+            error = cause.message + ('；结果尚未确认，请刷新后重试' if cause.uncertain else '')
+        try:
+            body = await client.request('GET', f'groups/{group_id}')
+        except UpstreamError as cause:
+            return {'id': group_id, 'name': name, 'rate_multiplier': None, 'verified': False,
+                    'error': error or f'{cause.message}；无法复核写入结果，请刷新后重试'}
+        stored = body.get('rate_multiplier') if isinstance(body, dict) else None
+        try:
+            verified = float(stored) == float(rate_multiplier)
+        except (TypeError, ValueError):
+            verified = False
+        if verified:
+            error = ''
+        elif not error:
+            error = '写入后复核不一致，分组倍率可能已被其他管理员修改'
+        return {'id': group_id, 'name': body.get('name', name) if isinstance(body, dict) else name,
+                'rate_multiplier': stored, 'verified': verified, 'error': error}
 
     async def reconcile_locked(self):
         schedule = self.store.welfare_schedule()

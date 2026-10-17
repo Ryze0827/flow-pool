@@ -303,6 +303,18 @@ class WelfareGroupStatusRequest(BaseModel):
     enabled: StrictBool
 
 
+class WelfareGroupRateRequest(BaseModel):
+    rate_multiplier: float = Field(1, ge=0, le=1000, allow_inf_nan=False)
+
+    @field_validator('rate_multiplier')
+    @classmethod
+    def rate_precision(cls, value):
+        amount = Decimal(str(value))
+        if amount != amount.quantize(Decimal('0.0001')):
+            raise ValueError('倍率最多支持 4 位小数')
+        return value
+
+
 class WelfareGroupCopyRequest(BaseModel):
     source_group_id: Annotated[int, Field(strict=True, ge=1, le=9223372036854775807)]
 
@@ -343,12 +355,21 @@ class CheckInSettings(BaseModel):
     enabled: StrictBool = False
     min_streak_days: int = Field(1, strict=True, ge=1, le=3650)
     max_streak_days: int = Field(7, strict=True, ge=1, le=3650)
+    reward_amount: float = Field(1, gt=0, le=10000, allow_inf_nan=False)
 
     @model_validator(mode='after')
     def valid_streak_range(self):
         if self.min_streak_days > self.max_streak_days:
             raise ValueError('连续签到天数区间的最小值不能大于最大值')
         return self
+
+    @field_validator('reward_amount')
+    @classmethod
+    def reward_precision(cls, value):
+        amount = Decimal(str(value))
+        if amount != amount.quantize(Decimal('0.0001')):
+            raise ValueError('奖励额度最多支持 4 位小数')
+        return value
 
 
 class Enroll(BaseModel):
