@@ -634,3 +634,88 @@ tbody tr:hover { background: #f5faff; }
   .remote-filters .search-input { grid-column: 1 / -1; }
   .remote-filters select { width: 100%; min-width: 0; }
 }
+
+.mobile-account-error { display: none; }
+@media (max-width: 600px) {
+  .accounts-panel .account-list tbody tr {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-areas: 'identity identity identity status status guard' 'quota quota quota quota quota quota' 'explanation explanation explanation explanation explanation explanation' 'ratio ratio ratio check check check' 'priority priority priority concurrency concurrency concurrency' 'actions actions actions actions actions actions';
+    column-gap: 6px;
+  }
+  .mobile-compact .accounts-panel .account-list tbody tr {
+    grid-template-areas: 'identity identity identity status status guard' 'quota quota quota quota quota quota' 'explanation explanation explanation explanation explanation explanation' 'check check check check check check' 'actions actions actions actions actions actions';
+  }
+  .accounts-panel .account-list .account-identity-cell,
+  .accounts-panel .account-list .account-status-cell,
+  .accounts-panel .account-list .account-guard-cell { align-self: center; }
+  .accounts-panel .account-list .account-name { min-height: 40px; align-items: center; }
+  .accounts-panel .account-list .account-avatar,
+  .accounts-panel .account-guard-cell .account-field-label,
+  .accounts-panel .account-guard-cell .check-row > span,
+  .accounts-panel .account-status-cell > .cell-error { display: none; }
+  .accounts-panel .account-list .account-name strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .accounts-panel .account-status-cell .ant-tag { display: flex; align-items: center; justify-content: center; margin: 0; padding-inline: 4px; font-size: 12px; white-space: nowrap; }
+  .accounts-panel .account-status-cell .ant-tag > span:not(.dot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .accounts-panel .account-guard-cell .check-row { min-height: 40px; justify-content: flex-end; }
+  .accounts-panel .account-explanation-cell .mobile-account-error { display: block; margin-bottom: 4px; }
+}
+
+.mobile-home { display: none; }
+@media (max-width: 600px) {
+  .mobile-subpage .sidebar .upgrade-entry { display: none; }
+  .mobile-home { position: absolute; left: 8px; top: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 2px; height: 40px; padding: 0 5px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--accent); font-size: 13px; }
+  .mobile-home svg { transform: rotate(180deg); flex-shrink: 0; }
+  .main-content .form-panel { padding: 12px; }
+  .main-content .card-title { gap: 8px; margin-bottom: 12px; }
+  .main-content .card-title h2, .main-content .panel-heading h2 { font-size: 16px; line-height: 1.5; }
+  .main-content .form-grid { gap: 12px; }
+  .main-content .form-grid input, .main-content .form-grid select { min-height: 40px; padding: 8px 10px; }
+  .rules-form .card-title { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .rules-form .card-title .check-row { min-height: 32px; margin: 0; font-size: 13px; }
+  .rules-form .guard-pools { padding: 10px; margin-block: 12px; }
+  .rules-form .guard-pools legend { font-size: 13px; }
+  .rules-form .guard-pool-options { gap: 4px 12px; }
+  .rules-form .guard-pool-options .check-row { min-height: 32px; font-size: 13px; }
+  .rules-form .rules-fields { gap: 12px; }
+  .rules-form .rules-fields > label { min-width: 0; font-size: 13px; line-height: 1.5; }
+  .rules-form .rules-fields input { width: 100%; min-height: 40px; padding: 8px 10px; }
+  .mobile-compact .rules-form .flow-diagram,
+  .mobile-compact .rules-form .notice:not(.compact),
+  .mobile-compact .rules-form .guard-pools > small,
+  .mobile-compact .rules-form .rules-fields label > small { display: none; }
+  .rules-form .form-actions { margin-top: 14px; }
+  .app-shell .modal-heading { padding: 12px; gap: 8px; }
+  .app-shell .modal-heading h2 { font-size: 16px; line-height: 1.5; }
+  .app-shell .modal-heading p { font-size: 12px; line-height: 1.6; }
+  .app-shell .modal-body { padding-inline: 12px; padding-bottom: 12px; }
+  .app-shell .modal-footer { padding: 10px 12px; gap: 8px; }
+  .app-shell .modal-footer select { flex: 1 1 130px; min-width: 130px; max-width: 100%; }
+  .app-shell button.icon-button[aria-label^='关闭'] { width: auto; min-width: 60px; height: 40px; min-height: 40px; padding: 0 4px; gap: 3px; flex-shrink: 0; font-size: 12px; }
+  .app-shell button.icon-button[aria-label^='关闭']::after { content: '关闭'; }
+  .app-shell button.icon-button[aria-label^='关闭'] svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .main-content .rule-dialog-heading { position: sticky; top: -18px; z-index: 2; padding-block: 8px; background: #fff; }
+}
+@media (min-width: 360px) and (max-width: 600px) {
+  .rules-form .rules-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rules-form .rules-fields > label { display: flex; flex-direction: column; }
+  .rules-form .rules-fields input { margin-top: auto; }
+}
+
+/* Compact copy is opt-in by context; errors and action consequences stay visible. */
+.mobile-brief-copy { display: none; }
+@media (max-width: 600px) {
+  .app-shell.mobile-compact .mobile-full-copy { display: none; }
+  .app-shell.mobile-compact .mobile-brief-copy { display: inline; }
+  .mobile-compact .plaza-availability-copy > p,
+  .mobile-compact .plaza-section-heading p,
+  .mobile-compact .welfare-heading p,
+  .mobile-compact .checkin-config > .schedule-toggle-copy small,
+  .mobile-compact .setup-banner p,
+  .mobile-compact .upload-hint > span,
+  .mobile-compact .import-steps,
+  .mobile-compact .history-toggle > span > small,
+  .mobile-compact .field-title > small,
+  .mobile-compact .performance-refresh .refresh-countdown { display: none; }
+  .mobile-compact .welfare-heading, .mobile-compact .plaza-section-heading { gap: 8px; }
+  .mobile-compact .login-footnote { font-size: 12px; line-height: 1.6; }
+}

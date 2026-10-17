@@ -119,7 +119,7 @@ onUnmounted(() => clearInterval(polling))
         <ol class="invoice-tier-preview" aria-label="已保存的发票手续费档位">
           <li v-for="tier in sortedTiers" :key="tier.minimum"><small>金额 ≥ {{ amount(tier.minimum) }}</small><strong>{{ amount(tier.fee) }}</strong><span>固定手续费</span></li>
         </ol>
-        <p class="small muted">每档适用至下一档起点，按合并后的申请总金额匹配，只收取一次固定手续费。发票邮件复用“邮件通知”中的 SMTP 配置。</p>
+        <p class="small muted"><span class="mobile-full-copy">每档适用至下一档起点，按合并后的申请总金额匹配，只收取一次固定手续费。发票邮件复用“邮件通知”中的 SMTP 配置。</span><span class="mobile-brief-copy">按申请总金额匹配档位，每单收一次手续费。</span></p>
       </template>
     </section>
     <dialog ref="invoiceRulesDialog" class="invoice-rules-dialog" aria-labelledby="invoice-rules-dialog-title" @click.self="!busy && invoiceRulesDialog.close()" @cancel="busy && $event.preventDefault()">
@@ -131,13 +131,13 @@ onUnmounted(() => clearInterval(polling))
           <label>固定手续费（USD）<input v-model="tier.fee" type="number" min="0" step="0.01" required :disabled="busy"/></label>
           <button type="button" class="button" :disabled="busy || rules.tiers.length === 1" :aria-label="`删除第 ${index + 1} 档`" @click="rules.tiers.splice(index, 1)"><Trash2 :size="16"/>删除</button>
         </div>
-        <p class="small muted">首档起点必须为 0，金额起点不能重复；配置更高金额的手续费时，请保留 0 档并增加档位。金额最多两位小数。</p>
+        <p class="small muted"><span class="mobile-full-copy">首档起点必须为 0，金额起点不能重复；配置更高金额的手续费时，请保留 0 档并增加档位。金额最多两位小数。</span><span class="mobile-brief-copy">首档为 0，起点不重复；金额最多两位小数。</span></p>
         <p v-if="rulesError" class="notice error" role="alert">{{ rulesError }}</p>
         <div class="form-actions"><button type="button" class="button" :disabled="busy || rules.tiers.length >= 20" @click="rules.tiers.push({ minimum: '', fee: '' })"><Plus :size="15"/>增加档位</button><button class="button primary" :disabled="busy">{{ busy ? '正在保存…' : '保存规则' }}</button></div>
       </form>
     </dialog>
     <section class="panel">
-      <div class="panel-heading"><h2>发票申请 · {{ total }}</h2><button class="button" :disabled="loading || busy" @click="refresh"><RefreshCw :size="15"/>刷新 · <span class="refresh-countdown">{{ refreshCountdownText }}</span></button></div>
+      <div class="panel-heading"><h2>发票申请 · {{ total }}</h2><button class="button" :disabled="loading || busy" @click="refresh"><RefreshCw :size="15"/>刷新<span class="mobile-full-copy"> · <span class="refresh-countdown">{{ refreshCountdownText }}</span></span></button></div>
       <div class="table-scroll"><table><thead><tr><th class="mobile-secondary">提交时间</th><th class="mobile-secondary">用户</th><th>抬头</th><th>开票金额</th><th class="mobile-secondary">手续费</th><th>状态</th><th class="mobile-secondary">邮件</th><th>操作</th></tr></thead><tbody>
         <tr v-for="item in items" :key="item.id"><td class="small mobile-secondary">{{ timeText(item.created_at) }}</td><td class="mobile-secondary">{{ item.user_email || '#' + item.user_id }}</td><td>{{ item.title }}</td><td>{{ amount(item.amount) }}</td><td class="mobile-secondary">{{ amount(item.fee) }}</td><td><span class="badge" :class="item.status === 'issued' ? 'success' : 'neutral'">{{ ['charging', 'uncertain'].includes(item.charge_status) ? '扣费待核对' : statuses[item.status] }}</span></td><td class="mobile-secondary">{{ mailStatuses[item.mail_status] || '—' }}</td><td><button class="button" @click="open(item)">查看</button></td></tr>
       </tbody></table></div>

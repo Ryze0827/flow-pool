@@ -81,7 +81,7 @@ onUnmounted(() => { mounted = false; requestId++; clearTimeout(timer); clearInte
   <section class="panel import-history" aria-labelledby="import-history-title">
     <div class="panel-heading"><div><h2 id="import-history-title">最近导入批次 <span class="count-chip">{{ total }}</span></h2><p>搜索全部历史账号，检查失效状态，快速重登入池</p></div><button class="button" :disabled="loading || !!checking" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新列表</button></div>
     <div class="history-toolbar"><label class="search-input"><Search :size="16"/><input v-model="search" maxlength="200" placeholder="搜索账号名称、邮箱或 ID" aria-label="搜索导入批次账号"/><button v-if="search" class="icon-button" aria-label="清空账号搜索" @click="search = ''"><X :size="14"/></button></label><label class="history-filter"><input v-model="onlyIssues" type="checkbox"/>仅展示需处理账号</label></div>
-    <details class="history-guide"><summary>入池后自动观察 5 分钟 <span>查看检查与重登说明</span></summary><p>推送成功后自动观察 5 分钟，期间上游账号错误会使用已保存账密自动重登。暂停、停用、到期和限流不触发重登；无账密需手动处理。检查不发起模型调用。</p></details>
+    <details class="history-guide"><summary>入池后自动观察 5 分钟 <span class="mobile-full-copy">查看检查与重登说明</span></summary><p>推送成功后自动观察 5 分钟，期间上游账号错误会使用已保存账密自动重登。暂停、停用、到期和限流不触发重登；无账密需手动处理。检查不发起模型调用。</p></details>
     <p v-if="error" class="notice error history-error" role="alert">{{ error }}</p>
     <div v-if="!items.length" class="quiet-empty" role="status">{{ loading ? '正在读取批次…' : search ? '没有匹配的账号或批次' : '还没有导入批次' }}</div>
     <div class="history-batch-list">

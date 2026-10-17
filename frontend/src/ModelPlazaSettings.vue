@@ -65,7 +65,7 @@ onMounted(load)
           <div class="plaza-section-heading"><EyeOff :size="18"/><div><h2>展示范围</h2><p>将指定分组从模型广场中隐藏。</p></div></div>
           <label for="plaza-hidden-groups" class="plaza-label">隐藏分组 ID <span>选填</span></label>
           <input id="plaza-hidden-groups" v-model="hiddenGroups" class="plaza-group-input" :disabled="busy" placeholder="例如：2, 5, 12" aria-describedby="plaza-groups-help"/>
-          <p id="plaza-groups-help" class="plaza-help">多个 ID 用逗号分隔。留空展示用户有权查看的全部分组。</p>
+          <p id="plaza-groups-help" class="plaza-help"><span class="mobile-full-copy">多个 ID 用逗号分隔。留空展示用户有权查看的全部分组。</span><span class="mobile-brief-copy">ID 用逗号分隔；留空不隐藏分组。</span></p>
         </section>
         <footer class="plaza-save-bar">
           <span class="plaza-save-status" role="status"><span v-if="dirty" class="dot"/><Check v-else :size="16"/>{{ dirty ? '有未保存的更改' : '配置已同步' }}</span>

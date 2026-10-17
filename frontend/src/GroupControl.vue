@@ -124,7 +124,7 @@ onMounted(loadGroups)
           <button class="button" :disabled="!canApply" @click="askApply(false)">取消强制 Fast</button>
         </div>
       </div>
-      <p class="small muted">写入后会从 Sub2API 重新读取实际值再确认。若 Sub2API 处于简易模式，它会忽略该设置，对应分组将显示为未确认。</p>
+      <p class="small muted"><span class="mobile-full-copy">写入后会从 Sub2API 重新读取实际值再确认。若 Sub2API 处于简易模式，它会忽略该设置，对应分组将显示为未确认。</span><span class="mobile-brief-copy">简易模式可能忽略设置，请以执行结果为准。</span></p>
       <p v-if="actionError" class="notice error" role="alert">{{ actionError }}</p>
       <p v-if="submitting" class="notice" role="status">正在写入所选分组，请勿关闭页面…</p>
       <div v-if="outcome" class="notice" role="status">

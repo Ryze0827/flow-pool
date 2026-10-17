@@ -331,7 +331,7 @@ onUnmounted(() => {
   <div class="promotion-campaigns">
     <header class="promotion-heading">
       <div><h1>促销活动</h1><p>管理促销活动关联的 GPT / OpenAI 分组状态。</p></div>
-      <button class="button" :disabled="busy" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新数据 · <span class="refresh-countdown">{{ refreshCountdownText }}</span></button>
+      <button class="button" :disabled="busy" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新数据<span class="mobile-full-copy"> · <span class="refresh-countdown">{{ refreshCountdownText }}</span></span></button>
     </header>
 
     <p v-if="error" class="notice error" role="alert">{{ error }}</p>
@@ -351,7 +351,7 @@ onUnmounted(() => {
         <div class="schedule-toggle-copy"><CalendarCheck :size="18"/><div><strong>开启签到活动</strong><small>{{ checkin.settings.enabled ? '用户可以在 erxinai 顶部签到' : '开启后用户即可签到' }}</small></div></div>
         <button type="button" class="welfare-switch" role="switch" :aria-checked="checkinDraft.enabled" aria-label="开启签到活动" :disabled="busy" @click="toggleCheckin"><span/></button>
         <div class="checkin-tiers">
-          <div class="checkin-tiers-heading"><div><strong>连续签到奖励区间</strong><small>按连续签到天数匹配奖励额度，区间不能重叠。</small></div><button type="button" class="button" :disabled="busy || checkinDraft.reward_tiers.length >= 20" @click="addCheckinTier"><Plus :size="15"/>新增区间</button></div>
+          <div class="checkin-tiers-heading"><div><strong>连续签到奖励区间</strong><small><span class="mobile-full-copy">按连续签到天数匹配奖励额度，区间不能重叠。</span><span class="mobile-brief-copy">天数区间不能重叠。</span></small></div><button type="button" class="button" :disabled="busy || checkinDraft.reward_tiers.length >= 20" @click="addCheckinTier"><Plus :size="15"/>新增区间</button></div>
           <div v-for="(tier, index) in checkinDraft.reward_tiers" :key="index" class="checkin-tier-row">
             <label>最少天数<input v-model.number="tier.min_streak_days" type="number" min="1" max="3650" required :disabled="busy" /></label>
             <label>最多天数<input v-model.number="tier.max_streak_days" type="number" min="1" max="3650" required :disabled="busy" /></label>
@@ -360,7 +360,7 @@ onUnmounted(() => {
           </div>
         </div>
         <button class="button primary" type="submit" :disabled="busy || !checkinDirty"><Save :size="15"/> {{ savingCheckin ? '保存中…' : '保存签到配置' }}</button>
-        <p>例如 1–3 天奖励 1，4–7 天奖励 2；签到记录会按用户和日期去重。</p>
+        <p><span class="mobile-full-copy">例如 1–3 天奖励 1，4–7 天奖励 2；签到记录会按用户和日期去重。</span><span class="mobile-brief-copy">同一用户每天仅计一次签到。</span></p>
       </form>
       <div v-if="checkin" class="checkin-summary">
         <div class="checkin-stat"><Users :size="18"/><span>今日签到人数</span><strong>{{ checkin.today_count }}</strong></div>
@@ -398,7 +398,7 @@ onUnmounted(() => {
           <label>英文关闭文案<input v-model.trim="scheduleDraft.countdown_copy.en_closing" maxlength="100" required /></label>
         </div>
         <button class="button primary" type="submit" :disabled="busy || !scheduleDirty"><Save :size="15"/>{{ savingSchedule ? '保存中…' : '保存时间段' }}</button>
-        <p>支持精确到分钟和跨午夜，例如 22:30–08:15。开始时间生效，结束时间停用；后台每 {{ schedule.interval_seconds }} 秒检查一次。</p>
+        <p><span class="mobile-full-copy">支持精确到分钟和跨午夜，例如 22:30–08:15。开始时间生效，结束时间停用；后台每 {{ schedule.interval_seconds }} 秒检查一次。</span><span class="mobile-brief-copy">按北京时间执行，开始启用、结束停用，支持跨午夜。</span></p>
       </form>
 
       <p v-if="schedule?.error" class="notice error schedule-error">{{ schedule.error }}</p>

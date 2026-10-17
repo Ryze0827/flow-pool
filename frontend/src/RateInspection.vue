@@ -176,7 +176,7 @@ onUnmounted(() => controller?.abort())
           </div>
           <p v-if="!groupsLoading && !groupsError && !matchingGroups.length" class="small muted">{{ groups.length ? '没有匹配的分组。' : '没有可用分组，请先在 Sub2API 中创建或启用分组。' }}</p>
           <p v-for="id in missingGroupIds" :key="id" class="notice error">分组 #{{ id }} 已停用、不存在或非 GPT 分组。<button type="button" class="text-button" @click="toggleGroup(id, false)">移除选择</button></p>
-          <p class="small muted">至少选择 1 个分组，最多 200 个；所选分组共用下方充值档位。</p>
+          <p class="small muted"><span class="mobile-full-copy">至少选择 1 个分组，最多 200 个；所选分组共用下方充值档位。</span><span class="mobile-brief-copy">选择 1–200 个分组，共用这些档位。</span></p>
           <p v-if="!groupsLoading && !groupsError" class="small muted">{{ rules.group_ids === null ? '默认适用分组' : '已保存适用分组' }}：{{ savedGroupNames || '未选择' }}</p>
         </fieldset>
         <div class="tier-editor">
@@ -186,7 +186,7 @@ onUnmounted(() => controller?.abort())
             <button type="button" class="button" :disabled="busy || correcting || savingRules || draftRules.tiers.length <= 1" :aria-label="`删除第 ${index + 1} 档`" @click="draftRules.tiers.splice(index, 1)"><Trash2 :size="16"/>删除</button>
           </div>
         </div>
-        <p class="small muted">门槛不能重复，倍率最多 4 位小数；达到门槛匹配最高档位，低于最低档时恢复分组默认倍率。编辑后请先保存，已有巡检结果需重新检查。</p>
+        <p class="small muted"><span class="mobile-full-copy">门槛不能重复，倍率最多 4 位小数；达到门槛匹配最高档位，低于最低档时恢复分组默认倍率。编辑后请先保存，已有巡检结果需重新检查。</span><span class="mobile-brief-copy">门槛不重复，倍率最多 4 位小数。低于首档用默认倍率；修改后保存并重新巡检。</span></p>
         <div class="form-actions">
           <button type="button" class="button" :disabled="busy || correcting || savingRules || draftRules.tiers.length >= 50" @click="draftRules.tiers.push({ minimum: '', rate: '' })"><Plus :size="16"/>新增档位</button>
           <button class="button primary" :disabled="busy || correcting || savingRules || groupsLoading || !!groupsError || !chosenGroupIds.length || !!missingGroupIds.length || !rulesDirty"><Check :size="16"/>{{ savingRules ? '正在保存…' : '保存档位规则' }}</button>

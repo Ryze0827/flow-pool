@@ -119,7 +119,7 @@ async function apply() {
       <div v-if="expanded" class="advanced-body">
       <p v-if="!configured" class="muted small">请先配置 Sub2API 连接。</p>
       <template v-else>
-        <div class="advanced-toolbar"><p class="small muted">作用于所选号池的全部托管账号，不受列表搜索和状态筛选影响。</p><button type="button" class="button" :disabled="disabled || dirty" @click="load"><RefreshCw :size="14"/>刷新分组</button></div>
+        <div class="advanced-toolbar"><p class="small muted"><span class="mobile-full-copy">作用于所选号池的全部托管账号，不受列表搜索和状态筛选影响。</span><span class="mobile-brief-copy">作用于所选号池全部账号，忽略列表筛选。</span></p><button type="button" class="button" :disabled="disabled || dirty" @click="load"><RefreshCw :size="14"/>刷新分组</button></div>
         <p v-if="loading" class="small muted" role="status">正在读取 Sub2API 分组…</p>
         <p v-if="error" class="notice error" role="alert">{{ error }}</p>
         <template v-if="loaded">
@@ -136,7 +136,7 @@ async function apply() {
           <p v-if="dirty" class="small orange-text">配置尚未保存，请保存后再执行批量操作。<button type="button" class="text-button" :disabled="disabled" @click="draft = [...saved]">撤销修改</button></p>
           <fieldset class="advanced-pools" :disabled="disabled"><legend>选择 FlowPool 号池（可多选）</legend><label v-for="pool in pools" :key="pool.id" class="check-row"><input v-model="selectedPools" type="checkbox" :value="pool.id"/>{{ pool.name }} <small class="muted">{{ accounts.filter(account => account.pool === pool.id).length }} 个</small></label></fieldset>
           <div class="advanced-toolbar"><span class="small muted">已选 {{ selectedPools.length }} 个号池 · {{ selectedAccounts.length }} 个账号 · {{ saved.length }} 个高级分组</span><div class="advanced-actions"><button type="button" class="button" :disabled="!canApply" @click="prepare('remove')"><ArrowUpToLine :size="15"/>一键移出高级分组</button><button type="button" class="button primary" :disabled="!canAdd" @click="prepare('add')"><ArrowDownToLine :size="15"/>一键移入高级分组</button></div></div>
-          <p class="small muted">移入会追加所配置的高级分组，移出只解除这些分组的关联。账号其它分组、调度开关及 FlowPool 归属保持不变。状态切换或仅生图冷却中的账号可能跳过；后续冷却恢复等操作仍按现有规则调整分组。</p>
+          <p class="small muted"><span class="mobile-full-copy">移入会追加所配置的高级分组，移出只解除这些分组的关联。账号其它分组、调度开关及 FlowPool 归属保持不变。状态切换或仅生图冷却中的账号可能跳过；后续冷却恢复等操作仍按现有规则调整分组。</span><span class="mobile-brief-copy">仅追加或解除高级分组关联，不改调度及本地号池；受保护账号可能跳过。</span></p>
         </template>
         <div v-if="outcome" class="advanced-outcome">
           <p role="status">{{ outcome.operation === 'add' ? '移入' : '移出' }}结果：更新 {{ outcome.changed }} · 无需修改 {{ outcome.unchanged }} · 跳过 {{ outcome.skipped }} · 失败 / 未确认 {{ outcome.failed }}</p>

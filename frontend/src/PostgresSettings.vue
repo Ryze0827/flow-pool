@@ -42,14 +42,14 @@ onMounted(load)
         <label>数据库主机<input v-model.trim="settings.host" required maxlength="253" placeholder="127.0.0.1" :disabled="busy"/></label>
         <label>数据库端口<input v-model.number="settings.port" type="number" min="1" max="65535" required :disabled="busy"/></label>
         <label>数据库名称<input v-model.trim="settings.database" required maxlength="128" placeholder="sub2api" :disabled="busy"/></label>
-        <label>数据库用户名<input v-model.trim="settings.username" maxlength="128" autocomplete="off" :disabled="busy"/><small>清空用户名并保存可停用 PG，同时清除保存的密码，恢复 API 查询。</small></label>
-        <label>数据库密码<input v-model="settings.password" type="password" maxlength="4096" autocomplete="new-password" :placeholder="settings.password_configured ? '已保存，留空保持不变' : '输入数据库密码'" :disabled="busy || settings.clear_password"/><small>密码加密保存且不回显；改变连接目标时需要重新填写。</small></label>
+        <label>数据库用户名<input v-model.trim="settings.username" maxlength="128" autocomplete="off" :disabled="busy"/><small><span class="mobile-full-copy">清空用户名并保存可停用 PG，同时清除保存的密码，恢复 API 查询。</span><span class="mobile-brief-copy">清空用户名并保存：停用 PG、清除密码。</span></small></label>
+        <label>数据库密码<input v-model="settings.password" type="password" maxlength="4096" autocomplete="new-password" :placeholder="settings.password_configured ? '已保存，留空保持不变' : '输入数据库密码'" :disabled="busy || settings.clear_password"/><small><span class="mobile-full-copy">密码加密保存且不回显；改变连接目标时需要重新填写。</span><span class="mobile-brief-copy">修改连接目标后需重填密码。</span></small></label>
         <label>SSL 模式<select v-model="settings.sslmode" :disabled="busy"><option value="disable">disable · 不使用 SSL</option><option value="allow">allow · 优先普通连接</option><option value="prefer">prefer · 优先 SSL</option><option value="require">require · 必须 SSL</option><option value="verify-ca">verify-ca · 验证证书</option><option value="verify-full">verify-full · 验证证书及主机名</option></select></label>
         <label>连接超时（秒）<input v-model.number="settings.connect_timeout" type="number" min="1" max="30" required :disabled="busy"/></label>
         <label>查询超时（秒）<input v-model.number="settings.statement_timeout" type="number" min="1" max="300" required :disabled="busy"/></label>
       </div>
       <label class="check-row"><input v-model="settings.clear_password" type="checkbox" :disabled="busy" @change="settings.password = ''"/>不使用密码（清除已保存密码）</label>
-      <p class="small muted">先保存上方 Sub2API 管理员 Key，再测试数据库。页面保存的 PG 配置优先于环境变量；查询强制只读，修改仍通过 Sub2API 接口完成。</p>
+      <p class="small muted"><span class="mobile-full-copy">先保存上方 Sub2API 管理员 Key，再测试数据库。页面保存的 PG 配置优先于环境变量；查询强制只读，修改仍通过 Sub2API 接口完成。</span><span class="mobile-brief-copy">先保存管理员 Key 再测试。PG 只读，页面配置优先于环境变量。</span></p>
       <p v-if="message" class="notice" role="status">{{ message }}</p>
       <div class="form-actions"><button class="button primary" :disabled="busy"><Check :size="16"/>保存数据库配置</button><button type="button" class="button" :disabled="busy" @click="perform(false)"><RefreshCw :size="16"/>{{ busy ? '处理中…' : '测试数据库连接' }}</button></div>
     </form>
