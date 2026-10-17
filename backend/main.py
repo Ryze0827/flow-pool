@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, WelfareGroupCopyRequest, WelfareSchedule, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, WelfareGroupCopyRequest, WelfareSchedule, CheckInSettings, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -334,6 +334,26 @@ async def promotion_welfare_groups():
 @app.get('/api/model-plaza-user/welfare-schedule')
 async def model_plaza_user_welfare_schedule():
     return {'schedule': promotions.user_schedule_status()}
+
+
+@app.get('/api/model-plaza-user/check-in')
+async def model_plaza_user_checkin(request: Request):
+    return promotions.user_checkin_status(request.state.invoice_user['id'])
+
+
+@app.post('/api/model-plaza-user/check-in')
+async def model_plaza_user_checkin_submit(request: Request):
+    return promotions.user_checkin(request.state.invoice_user['id'])
+
+
+@app.get('/api/promotions/check-in')
+async def promotion_checkin():
+    return promotions.checkin_status()
+
+
+@app.put('/api/promotions/check-in')
+async def promotion_checkin_save(value: CheckInSettings, request: Request):
+    return promotions.save_checkin_settings(value, request.state.admin['id'])
 
 
 @app.put('/api/promotions/welfare-groups/{group_id}/status')

@@ -53,6 +53,32 @@ class Promotions:
                 'last_check_at': self.last_check_at, 'next_check_at': self.next_check_at,
                 'error': self.error, 'interval_seconds': INTERVAL_SECONDS}
 
+    def checkin_status(self):
+        settings = self.store.checkin_settings()
+        counts = self.store.checkin_counts(30)
+        today = self.store.checkin_today().isoformat()
+        today_count = next((item['count'] for item in counts if item['date'] == today), 0)
+        return {'settings': settings.model_dump(), 'daily_counts': counts,
+                'today_count': today_count,
+                'total_checkins': self.store.db.execute('SELECT COUNT(*) FROM checkins').fetchone()[0]}
+
+    def user_checkin_status(self, user_id):
+        settings = self.store.checkin_settings()
+        return {'enabled': settings.enabled, 'min_streak_days': settings.min_streak_days,
+                'max_streak_days': settings.max_streak_days, **self.store.checkin_status(user_id)}
+
+    def user_checkin(self, user_id):
+        settings = self.store.checkin_settings()
+        if not settings.enabled:
+            raise HTTPException(409, '签到活动暂未开启')
+        result = self.store.record_checkin(user_id)
+        return {**self.user_checkin_status(user_id), **result, 'last_checkin_date': result['checkin_date']}
+
+    def save_checkin_settings(self, value, owner_id):
+        self.store.save_checkin_settings(value)
+        self.store.event('checkin_settings', f'管理员 #{owner_id} 已更新签到活动配置：连续签到 {value.min_streak_days}–{value.max_streak_days} 天，{"开启" if value.enabled else "关闭"}')
+        return self.checkin_status()
+
     def user_schedule_status(self):
         schedule = self.store.welfare_schedule()
         now = datetime.now(SHANGHAI)

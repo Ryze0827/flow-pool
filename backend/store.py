@@ -2,11 +2,13 @@ import json
 import os
 import sqlite3
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet
 
-from .models import MailSettings, PostgresSettings, RateRules, Settings, WelfareSchedule
+from .models import CheckInSettings, MailSettings, PostgresSettings, RateRules, Settings, WelfareSchedule
 from .sub2api import public_account
 
 
@@ -33,6 +35,12 @@ class Store:
             CREATE TABLE IF NOT EXISTS rate_rules (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS mail_settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS welfare_schedule (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS checkin_settings (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS checkins (
+                user_id INTEGER NOT NULL, checkin_date TEXT NOT NULL, streak INTEGER NOT NULL,
+                created_at REAL NOT NULL, PRIMARY KEY(user_id, checkin_date)
+            );
+            CREATE INDEX IF NOT EXISTS checkins_date ON checkins(checkin_date);
             CREATE TABLE IF NOT EXISTS mail_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, kind TEXT NOT NULL,
                 event_key TEXT UNIQUE, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
@@ -161,6 +169,56 @@ class Store:
     def save_welfare_schedule(self, value):
         self.db.execute('INSERT OR REPLACE INTO welfare_schedule VALUES (1, ?)', (self.seal(value.model_dump()),))
         self.db.commit()
+
+    def checkin_settings(self):
+        row = self.db.execute('SELECT payload FROM checkin_settings WHERE id=1').fetchone()
+        return CheckInSettings(**self.unseal(row['payload'])) if row else CheckInSettings()
+
+    def save_checkin_settings(self, value):
+        self.db.execute('INSERT OR REPLACE INTO checkin_settings VALUES (1, ?)', (self.seal(value.model_dump()),))
+        self.db.commit()
+
+    @staticmethod
+    def checkin_today():
+        return datetime.now(ZoneInfo('Asia/Shanghai')).date()
+
+    def checkin_status(self, user_id):
+        today = self.checkin_today()
+        row = self.db.execute('SELECT streak FROM checkins WHERE user_id=? AND checkin_date=?',
+                              (user_id, today.isoformat())).fetchone()
+        latest = self.db.execute('SELECT streak, checkin_date FROM checkins WHERE user_id=? ORDER BY checkin_date DESC LIMIT 1',
+                                 (user_id,)).fetchone()
+        current_streak = row['streak'] if row else (
+            latest['streak'] if latest and latest['checkin_date'] == (today - timedelta(days=1)).isoformat() else 0)
+        return {'checked_in_today': bool(row), 'streak': current_streak,
+                'last_checkin_date': latest['checkin_date'] if latest else None, 'today': today.isoformat()}
+
+    def record_checkin(self, user_id):
+        today = self.checkin_today()
+        today_text = today.isoformat()
+        with self.db:
+            existing = self.db.execute('SELECT streak FROM checkins WHERE user_id=? AND checkin_date=?',
+                                       (user_id, today_text)).fetchone()
+            if existing:
+                return {'checked_in_today': True, 'streak': existing['streak'], 'created': False,
+                        'checkin_date': today_text}
+            previous = self.db.execute('SELECT streak FROM checkins WHERE user_id=? AND checkin_date=?',
+                                       (user_id, (today - timedelta(days=1)).isoformat())).fetchone()
+            streak = (previous['streak'] + 1) if previous else 1
+            cursor = self.db.execute('INSERT OR IGNORE INTO checkins(user_id, checkin_date, streak, created_at) VALUES (?, ?, ?, ?)',
+                                     (user_id, today_text, streak, time.time()))
+            if not cursor.rowcount:
+                streak = self.db.execute('SELECT streak FROM checkins WHERE user_id=? AND checkin_date=?',
+                                         (user_id, today_text)).fetchone()['streak']
+        return {'checked_in_today': True, 'streak': streak, 'created': bool(cursor.rowcount), 'checkin_date': today_text}
+
+    def checkin_counts(self, limit=30):
+        today = self.checkin_today()
+        rows = {row['date']: row['count'] for row in self.db.execute(
+            'SELECT checkin_date AS date, COUNT(*) AS count FROM checkins WHERE checkin_date>=? GROUP BY checkin_date',
+            ((today - timedelta(days=limit - 1)).isoformat(),))}
+        return [{'date': (today - timedelta(days=offset)).isoformat(), 'count': rows.get((today - timedelta(days=offset)).isoformat(), 0)}
+                for offset in range(limit)]
 
     def queue_mail(self, kind, payload, account_id=None, event_key=None, interval=0):
         if interval and self.db.execute('''SELECT 1 FROM mail_messages WHERE account_id=? AND kind=?

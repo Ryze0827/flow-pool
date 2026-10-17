@@ -339,6 +339,18 @@ class WelfareSchedule(BaseModel):
         return value
 
 
+class CheckInSettings(BaseModel):
+    enabled: StrictBool = False
+    min_streak_days: int = Field(1, strict=True, ge=1, le=3650)
+    max_streak_days: int = Field(7, strict=True, ge=1, le=3650)
+
+    @model_validator(mode='after')
+    def valid_streak_range(self):
+        if self.min_streak_days > self.max_streak_days:
+            raise ValueError('连续签到天数区间的最小值不能大于最大值')
+        return self
+
+
 class Enroll(BaseModel):
     account_ids: list[int] = Field(min_length=1, max_length=500)
     pool: Pool
