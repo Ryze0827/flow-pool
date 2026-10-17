@@ -44,6 +44,7 @@ WITH target_users AS (
 SELECT u.id AS user_id, u.username, u.email,
        GREATEST(COALESCE(r.total, 0) - COALESCE(f.total, 0), 0) AS total,
        g.id AS group_id, g.name AS group_name,
+       g.rate_multiplier AS default_rate,
        COALESCE(m.rate_multiplier, g.rate_multiplier) AS current,
        m.rate_multiplier IS NOT NULL AS custom,
        (NOT (g.is_exclusive OR u.restrict_public_groups) OR EXISTS (
@@ -66,9 +67,9 @@ def number(value):
         return None
 
 
-def expected_rate(total, rules):
+def expected_rate(total, rules, default_rate=None):
     return next((Decimal(str(tier.rate)) for tier in sorted(rules.tiers, key=lambda tier: tier.minimum, reverse=True)
-                 if total >= Decimal(str(tier.minimum))), None)
+                 if total >= Decimal(str(tier.minimum))), default_rate)
 
 
 def default_groups(groups):
@@ -98,7 +99,8 @@ def summarize(records, rules=None):
         total = number(record['total'])
         if total is None:
             raise HTTPException(502, '历史充值数据无效，本次巡检未完成')
-        expected = expected_rate(total, rules)
+        default_rate = number(record.get('default_rate'))
+        expected = expected_rate(total, rules, default_rate)
         if expected is None or not record['eligible']:
             continue
         checked += 1

@@ -186,7 +186,7 @@ onUnmounted(() => controller?.abort())
             <button type="button" class="button" :disabled="busy || correcting || savingRules || draftRules.tiers.length <= 1" :aria-label="`删除第 ${index + 1} 档`" @click="draftRules.tiers.splice(index, 1)"><Trash2 :size="16"/>删除</button>
           </div>
         </div>
-        <p class="small muted">门槛不能重复，倍率最多 4 位小数；匹配已达到的最高门槛。编辑后请先保存，已有巡检结果需重新检查。</p>
+        <p class="small muted">门槛不能重复，倍率最多 4 位小数；达到门槛匹配最高档位，低于最低档时恢复分组默认倍率。编辑后请先保存，已有巡检结果需重新检查。</p>
         <div class="form-actions">
           <button type="button" class="button" :disabled="busy || correcting || savingRules || draftRules.tiers.length >= 50" @click="draftRules.tiers.push({ minimum: '', rate: '' })"><Plus :size="16"/>新增档位</button>
           <button class="button primary" :disabled="busy || correcting || savingRules || groupsLoading || !!groupsError || !chosenGroupIds.length || !!missingGroupIds.length || !rulesDirty"><Check :size="16"/>{{ savingRules ? '正在保存…' : '保存档位规则' }}</button>
