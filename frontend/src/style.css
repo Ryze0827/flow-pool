@@ -108,6 +108,7 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
   .upgrade-dialog .upgrade-progress{padding:13px}
   .upgrade-dialog .upgrade-version{gap:12px}
 }
+
 /* Keep the desktop quota list inside the existing pool heading. */
 .usage-active-accounts{display:none}
 @media(min-width:851px){
@@ -250,4 +251,31 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
   .accounts-panel .tabs button{font-size:13px}
   .overview-content .recent-events .event-row>span:nth-child(2){min-width:0}
   .overview-content .recent-events .event-row time{padding-left:26px}
+}
+
+/* Keep the shared page chrome compact so each menu gives more room to its content. */
+.topbar{height:58px;padding-inline:28px}
+.main-content{padding-top:16px;padding-bottom:10px}
+.button{min-height:34px;padding:7px 12px}
+.page-actions{margin-bottom:10px}
+.panel-heading{padding:15px 20px}
+.panel-heading p{margin-top:3px}
+.card-title{margin-bottom:18px}
+.plaza-heading,.promotion-heading{margin-bottom:16px}
+.plaza-availability,.plaza-card,.plaza-guide{padding:20px}
+.plaza-section-heading{margin-bottom:18px}
+.welfare-heading{padding:20px}
+
+@media(max-width:1150px){
+  .topbar{padding-inline:23px}
+}
+
+@media(max-width:600px){
+  .topbar{height:52px;padding-inline:15px}
+  .main-content{padding-top:12px;padding-bottom:10px}
+  .button{min-height:32px;padding:6px 10px}
+  .panel-heading{padding:13px 15px}
+  .card-title{margin-bottom:15px}
+  .plaza-heading,.promotion-heading{margin-bottom:12px}
+  .plaza-availability,.plaza-card,.plaza-guide,.welfare-heading{padding:16px}
 }
