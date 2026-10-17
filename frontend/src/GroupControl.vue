@@ -175,12 +175,12 @@ onMounted(loadGroups)
 .group-selection { border: 0; padding: 20px 0 0; margin: 0; min-width: 0; }
 .group-selection legend { padding: 0; font-size: 14px; font-weight: 600; }
 .group-select-all { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 13px; cursor: pointer; }
-.group-select-all input { margin: 0; }
+.group-select-all input { width: 16px; height: 16px; margin: 0; }
 .group-checkbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 12px; max-height: 440px; overflow: auto; padding: 2px; }
 .group-checkbox { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: #fff; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; }
 .group-checkbox:hover { border-color: #b7c8d9; background: #fbfcfe; }
 .group-checkbox.selected { border-color: #9fbfd0; background: #f4f9fb; box-shadow: 0 2px 7px #2946600b; }
-.group-checkbox input { margin: 3px 0 0; }
+.group-checkbox input { width: 16px; height: 16px; margin: 3px 0 0; }
 .group-checkbox-content { min-width: 0; flex: 1; }
 .group-checkbox-heading { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .group-checkbox-heading strong { min-width: 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 550; }
