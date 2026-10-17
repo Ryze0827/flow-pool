@@ -45,12 +45,14 @@ function resetText(reset) {
 <style scoped>
 .quota-cell { min-width: 170px; font-size: 12px; }
 .quota-window + .quota-window { margin-top: 8px; }
+.quota-window > span { display: block; line-height: 1.5; }
 .quota-cell small { display: block; color: var(--text-muted, #718096); font-size: 11px; margin-top: 3px; }
 .quota-track { height: 4px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .quota-track span { display: block; height: 100%; background: #14b8a6; }
 .quota-track span.low { background: #f59e0b; }
 .quota-track span.exhausted { background: #ef4444; }
-.quota-progress { margin-top: 4px; line-height: 1; }
+.quota-progress { display: block; width: 100%; margin-top: 5px; line-height: 1; }
+.quota-progress :deep(.ant-progress-outer) { width: 100%; }
 .quota-progress :deep(.ant-progress-inner) { background: #edf1f6; }
 .quota-default { display: inline !important; margin-left: 4px; }
 .quota-compact { min-width: 0; font-size: 11px; }

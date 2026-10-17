@@ -388,6 +388,8 @@ body { background: #f5f7fb; color: var(--text); }
 .panel { border-color: #e1e8f2; border-radius: 14px; box-shadow: 0 8px 28px rgba(31, 56, 88, .06); }
 .panel-heading { border-bottom-color: #edf1f7; }
 .button, .ant-btn { border-radius: 8px; font-weight: 500; }
+.ant-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 1.4; }
+.ant-btn > svg, .ant-btn > .anticon { flex: 0 0 auto; vertical-align: middle; }
 .button.primary { background: #1677ff; box-shadow: 0 4px 12px rgba(22,119,255,.2); }
 .button.primary:hover:not(:disabled) { background: #4096ff; }
 .ant-btn-primary { box-shadow: 0 4px 12px rgba(22,119,255,.2); }
@@ -400,7 +402,8 @@ body { background: #f5f7fb; color: var(--text); }
 .table-toolbar { background: #fbfcfe; border-bottom-color: #e7edf5; }
 th { background: #f7f9fc; color: #667085; }
 tbody tr:hover { background: #f5faff; }
-.account-status-cell .ant-tag { margin-inline-end: 0; border-radius: 6px; }
+.account-status-cell .ant-tag { display: inline-flex; align-items: center; margin-inline-end: 0; border-radius: 6px; line-height: 20px; padding-inline: 7px; }
+.account-status-cell .ant-tag .dot { flex: 0 0 auto; }
 .badge { border-radius: 6px; }
 .stats-grid .stat-card { border-color: #e1e8f2; box-shadow: 0 6px 18px rgba(31,56,88,.05); }
 .stats-grid .ant-statistic-title { color: #667085; font-size: 13px; }
