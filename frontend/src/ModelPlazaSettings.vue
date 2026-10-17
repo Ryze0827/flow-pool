@@ -96,16 +96,16 @@ onMounted(load)
 .plaza-availability h2 { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
 .plaza-settings h2 { font-size: 1rem; }
 .plaza-switch { width: 2.8rem; height: 1.6rem; padding: .2rem; border: 0; border-radius: 2rem; background: var(--control-border); flex-shrink: 0; }
-.plaza-switch span { display: block; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: Canvas; }
+.plaza-switch span { display: block; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: var(--surface); }
 .plaza-switch[aria-checked='true'] { background: var(--accent); }
 .plaza-switch[aria-checked='true'] span { transform: translateX(1.2rem); }
 .plaza-card { padding: 1.5rem; }
 .plaza-section-heading { display: flex; align-items: flex-start; gap: .75rem; margin-bottom: 1.5rem; }
 .plaza-section-heading > svg { color: var(--accent); margin-top: .2rem; flex-shrink: 0; }
 .plaza-section-heading > .badge { margin-left: auto; }
-.plaza-label { display: flex; align-items: center; gap: .5rem; font-size: .875rem; font-weight: 550; margin-bottom: .65rem; }
+.plaza-label { display: flex; align-items: center; gap: .5rem; font-size: .875rem; font-weight: 500; margin-bottom: .65rem; }
 .plaza-label span { color: var(--muted); font-size: .8rem; font-weight: 400; }
-.plaza-textarea { display: block; width: 100%; min-height: 14rem; resize: vertical; padding: 1rem; color: var(--text); background: Canvas; border: 1px solid var(--control-border); border-radius: .6rem; line-height: 1.8; font-size: .875rem; }
+.plaza-textarea { display: block; width: 100%; min-height: 14rem; resize: vertical; padding: 1rem; color: var(--text); background: var(--surface); border: 1px solid var(--control-border); border-radius: .6rem; line-height: 1.8; font-size: .875rem; }
 .plaza-textarea::placeholder { color: var(--muted); opacity: .75; }
 .plaza-textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .plaza-input-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; margin-top: .65rem; font-size: .8rem; color: var(--muted); }

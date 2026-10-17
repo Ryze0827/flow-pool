@@ -183,7 +183,7 @@ onMounted(loadGroups)
 .group-checkbox input { width: 16px; height: 16px; margin: 3px 0 0; }
 .group-checkbox-content { min-width: 0; flex: 1; }
 .group-checkbox-heading { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-.group-checkbox-heading strong { min-width: 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 550; }
+.group-checkbox-heading strong { min-width: 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 500; }
 .group-checkbox-heading small { flex-shrink: 0; color: var(--muted); }
 .group-checkbox-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .group-result { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }

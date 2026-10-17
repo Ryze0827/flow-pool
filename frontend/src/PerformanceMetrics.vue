@@ -68,6 +68,6 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
 .stat-value strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: inherit; }
 .stat-value > span { flex-shrink: 0; }
 .performance-inline { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.performance-inline strong { font-size: 20px; font-weight: 650; line-height: 1.3; }
+.performance-inline strong { font-size: 20px; font-weight: 600; line-height: 1.3; }
 .performance-inline > span { color: var(--muted); font-size: 12px; }
 </style>

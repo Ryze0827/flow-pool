@@ -461,24 +461,24 @@ onUnmounted(() => {
 .promotion-heading p, .welfare-heading p { color: var(--muted); font-size: .875rem; }
 .promotion-tabs { display: flex; gap: .35rem; margin-bottom: 1.25rem; overflow-x: auto; border-bottom: 1px solid var(--border); }
 .promotion-tab { display: inline-flex; align-items: center; gap: .45rem; flex: 0 0 auto; padding: .75rem 1rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: .88rem; white-space: nowrap; cursor: pointer; }
-.promotion-tab:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 5%, Canvas); }
-.promotion-tab.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 650; }
+.promotion-tab:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.promotion-tab.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
 .promotion-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.promotion-tab-count { display: inline-grid; min-width: 1.25rem; height: 1.25rem; padding-inline: .3rem; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--accent) 10%, Canvas); color: var(--accent); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.promotion-tab-count { display: inline-grid; min-width: 1.25rem; height: 1.25rem; padding-inline: .3rem; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent); font-size: .72rem; font-variant-numeric: tabular-nums; }
 .welfare-panel { overflow: visible; }
 .checkin-panel { overflow: hidden; margin-bottom: 1.25rem; }
-.checkin-config { display: grid; grid-template-columns: minmax(15rem, 1fr) auto; align-items: end; gap: 1rem; padding: 1.25rem 1.5rem; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 3%, Canvas); }
+.checkin-config { display: grid; grid-template-columns: minmax(15rem, 1fr) auto; align-items: end; gap: 1rem; padding: 1.25rem 1.5rem; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 3%, var(--surface)); }
 .checkin-config label { display: grid; gap: .4rem; color: var(--muted); font-size: .78rem; }
 .checkin-config > p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
 .checkin-tiers { grid-column: 1 / -1; display: grid; gap: .7rem; width: 100%; }
 .checkin-tiers-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .checkin-tiers-heading > div { display: grid; gap: .25rem; }
 .checkin-tiers-heading small { color: var(--muted); font-size: .78rem; }
-.checkin-tier-row { display: grid; grid-template-columns: repeat(3, minmax(8rem, 1fr)) auto; align-items: end; gap: .8rem; padding: .8rem; border: 1px solid var(--border); border-radius: 10px; background: Canvas; }
+.checkin-tier-row { display: grid; grid-template-columns: repeat(3, minmax(8rem, 1fr)) auto; align-items: end; gap: .8rem; padding: .8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 .checkin-tier-remove { margin-bottom: .1rem; color: var(--muted); }
 .checkin-tier-remove:hover:not(:disabled) { color: #b42318; }
 .checkin-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; border-top: 1px solid var(--border); background: var(--border); }
-.checkin-stat { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .25rem .65rem; padding: 1rem 1.5rem; background: Canvas; }
+.checkin-stat { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .25rem .65rem; padding: 1rem 1.5rem; background: var(--surface); }
 .checkin-stat svg { grid-row: span 2; color: var(--accent); }
 .checkin-stat span { color: var(--muted); font-size: .78rem; }
 .checkin-stat strong { font-size: 1.3rem; }
@@ -486,14 +486,14 @@ onUnmounted(() => {
 .checkin-counts-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .9rem; }
 .checkin-counts-heading small { color: var(--muted); font-size: .78rem; }
 .checkin-count-row { display: grid; grid-template-columns: 7rem 1fr 3rem; align-items: center; gap: .8rem; min-height: 2rem; font-size: .8rem; }
-.checkin-count-row > div { height: .45rem; overflow: hidden; border-radius: 1rem; background: color-mix(in srgb, var(--accent) 10%, Canvas); }
+.checkin-count-row > div { height: .45rem; overflow: hidden; border-radius: 1rem; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
 .checkin-count-row i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .checkin-count-row strong { text-align: right; }
 .welfare-heading { display: flex; align-items: center; gap: 1rem; padding: 1.5rem; }
 .welfare-heading > div:nth-child(2) { flex: 1; min-width: 0; }
 .welfare-heading h2 { font-size: 1rem; }
 .welfare-icon { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; flex-shrink: 0; color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: .75rem; }
-.welfare-schedule { display: grid; grid-template-columns: minmax(15rem, 1fr) auto minmax(8rem, .45fr) minmax(8rem, .45fr) auto auto; align-items: end; gap: 1rem; padding: 1.25rem 1.5rem; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 3%, Canvas); }
+.welfare-schedule { display: grid; grid-template-columns: minmax(15rem, 1fr) auto minmax(8rem, .45fr) minmax(8rem, .45fr) auto auto; align-items: end; gap: 1rem; padding: 1.25rem 1.5rem; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 3%, var(--surface)); }
 .schedule-toggle-copy { display: flex; align-items: center; gap: .7rem; align-self: center; min-width: 0; }
 .schedule-toggle-copy > svg { flex-shrink: 0; color: var(--accent); }
 .schedule-toggle-copy strong, .schedule-toggle-copy small { display: block; }
@@ -521,7 +521,7 @@ onUnmounted(() => {
 .welfare-rate input { width: 6.5rem; padding: 8px 9px; font-variant-numeric: tabular-nums; }
 .welfare-rate .icon-button { margin-bottom: 1px; border: 1px solid var(--border); }
 .welfare-switch { width: 2.8rem; height: 1.6rem; padding: .2rem; border: 0; border-radius: 2rem; background: var(--control-border); flex-shrink: 0; }
-.welfare-switch span { display: block; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: Canvas; }
+.welfare-switch span { display: block; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: var(--surface); }
 .welfare-switch[aria-checked='true'] { background: var(--accent); }
 .welfare-switch[aria-checked='true'] span { transform: translateX(1.2rem); }
 .welfare-switch:disabled { opacity: .55; cursor: not-allowed; }
@@ -535,17 +535,17 @@ onUnmounted(() => {
 .source-picker-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-picker-trigger > svg { flex-shrink: 0; color: var(--muted); transition: transform .15s; }
 .source-picker-trigger > svg.rotated { transform: rotate(180deg); }
-.source-menu { position: absolute; left: 0; z-index: 20; display: grid; width: min(19rem, calc(100vw - 2.2rem)); max-height: min(18rem, 50dvh); overflow-y: auto; padding: .35rem; border: 1px solid var(--border); border-radius: 10px; background: Canvas; box-shadow: 0 10px 28px #24324724; }
+.source-menu { position: absolute; left: 0; z-index: 20; display: grid; width: min(19rem, calc(100vw - 2.2rem)); max-height: min(18rem, 50dvh); overflow-y: auto; padding: .35rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 10px 28px #24324724; }
 .source-menu-down { top: calc(100% + .35rem); }
 .source-menu-up { bottom: calc(100% + .35rem); }
 .source-option { width: 100%; min-width: 0; padding: .6rem .7rem; border: 0; border-radius: 7px; background: transparent; color: var(--text); text-align: left; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
-.source-option:hover, .source-option.selected { background: color-mix(in srgb, var(--accent) 8%, Canvas); color: var(--accent); }
+.source-option:hover, .source-option.selected { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--accent); }
 .welfare-copy-button { white-space: nowrap; }
 .welfare-remove-dialog { margin: auto; padding: 0; color: var(--text); width: min(560px, calc(100vw - 24px)); max-height: 90dvh; overflow-y: auto; }
 .welfare-remove-dialog:not([open]) { display: none; }
 .welfare-remove-dialog::backdrop { background: #21304a3b; }
 .welfare-remove-dialog .modal-body { padding: 0 24px 20px; overflow-wrap: anywhere; }
-.welfare-member-list { max-height: 240px; overflow: auto; margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 3%, Canvas); font-size: 13px; }
+.welfare-member-list { max-height: 240px; overflow: auto; margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 3%, var(--surface)); font-size: 13px; }
 .welfare-member-list > div { padding: 5px 0; }
 @media (max-width: 1050px) { .welfare-schedule { grid-template-columns: minmax(12rem, 1fr) auto 1fr 1fr; } .schedule-timezone { grid-column: 1 / 3; } }
 @media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-row { flex-wrap: wrap; } .welfare-row > div:first-child { flex-basis: 100%; } .welfare-rate { flex: 1 1 8rem; } .welfare-copy { flex: 1 1 100%; min-width: 0; } .source-picker { flex: 1; } .source-picker-trigger { width: 100%; } .welfare-icon { display: none; } .welfare-schedule, .checkin-config { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule label, .checkin-config label { grid-column: span 1; } .checkin-tier-row { grid-template-columns: 1fr 1fr; } .checkin-tier-row label:nth-child(3) { grid-column: 1 / 2; } .checkin-tier-remove { grid-column: 2; grid-row: 2; justify-self: end; } .schedule-timezone { grid-column: 1 / 2; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button, .checkin-config > .button { grid-column: 1 / -1; } .checkin-summary { grid-template-columns: 1fr; } .checkin-counts { padding-inline: 1.1rem; } .checkin-count-row { grid-template-columns: 6.5rem 1fr 2rem; gap: .5rem; } }
