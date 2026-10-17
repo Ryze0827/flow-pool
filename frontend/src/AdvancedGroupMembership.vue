@@ -18,6 +18,7 @@ const outcome = ref(null)
 const pending = ref(null)
 const confirmation = ref(null)
 const expanded = ref(false)
+const advancedDialog = ref(null)
 const disabled = computed(() => props.busy || working.value || loading.value)
 const sameIds = (left, right) => [...left].sort((a, b) => a - b).join(',') === [...right].sort((a, b) => a - b).join(',')
 const dirty = computed(() => !sameIds(draft.value, saved.value))
@@ -48,8 +49,16 @@ async function load() {
 }
 function toggleExpanded() {
   if (working.value) return
-  expanded.value = !expanded.value
-  if (expanded.value && !loaded.value) void load()
+  if (expanded.value) {
+    advancedDialog.value?.close()
+    return
+  }
+  expanded.value = true
+  if (!loaded.value) void load()
+  advancedDialog.value?.showModal()
+}
+function closePanel() {
+  expanded.value = false
 }
 async function save() {
   if (disabled.value || !dirty.value) return
@@ -103,9 +112,11 @@ async function apply() {
 </script>
 
 <template>
-  <section class="advanced-groups">
-    <button type="button" class="advanced-toggle" :aria-expanded="expanded" :disabled="working" @click="toggleExpanded"><span class="advanced-toggle-label"><Settings2 :size="16"/>高级分组批量操作<span class="muted small">多选 FlowPool 号池</span></span><span class="advanced-toggle-action">{{ expanded ? '收起' : '展开' }}</span></button>
-    <div v-if="expanded" class="advanced-body">
+  <div class="advanced-groups">
+    <button type="button" class="button advanced-toggle" :aria-expanded="expanded" :disabled="working" @click="toggleExpanded"><Settings2 :size="15"/>高级分组操作</button>
+    <dialog ref="advancedDialog" class="modal advanced-dialog" aria-labelledby="advanced-groups-title" @cancel="closePanel" @close="closePanel">
+      <div class="modal-heading"><div><h2 id="advanced-groups-title">高级分组批量操作</h2><p>多选 FlowPool 号池</p></div><button type="button" class="icon-button" :disabled="working" aria-label="关闭高级分组操作" @click="advancedDialog.close()"><X :size="18"/></button></div>
+      <div v-if="expanded" class="advanced-body">
       <p v-if="!configured" class="muted small">请先配置 Sub2API 连接。</p>
       <template v-else>
         <div class="advanced-toolbar"><p class="small muted">作用于所选号池的全部托管账号，不受列表搜索和状态筛选影响。</p><button type="button" class="button" :disabled="disabled || dirty" @click="load"><RefreshCw :size="14"/>刷新分组</button></div>
@@ -132,7 +143,8 @@ async function apply() {
           <div class="advanced-results"><div v-for="item in outcome.results" :key="item.id" class="advanced-result"><div><strong>{{ item.name }}</strong><small>#{{ item.id }} · {{ poolName(item.pool) }}</small></div><span :class="['badge', ['changed', 'unchanged'].includes(item.status) ? 'success' : 'warning']">{{ statusLabel(item.status) }}</span><p v-if="item.error">{{ item.error }}</p></div></div>
         </div>
       </template>
-    </div>
+      </div>
+    </dialog>
     <dialog ref="confirmation" class="modal advanced-confirm" aria-labelledby="advanced-confirm-title" @cancel="working && $event.preventDefault()">
       <template v-if="pending">
         <div class="modal-heading"><h2 id="advanced-confirm-title">确认{{ pending.operation === 'add' ? '移入' : '移出' }}高级分组</h2><button type="button" class="icon-button" :disabled="working" aria-label="关闭高级分组确认" @click="confirmation.close()"><X :size="18"/></button></div>
@@ -147,17 +159,18 @@ async function apply() {
         <div class="modal-footer"><button type="button" class="button" :disabled="working" @click="confirmation.close()">取消</button><button type="button" class="button primary" :disabled="disabled" @click="apply">{{ working ? '处理中…' : `确认${pending.operation === 'add' ? '移入' : '移出'} ${pending.accounts.length} 个账号` }}</button></div>
       </template>
     </dialog>
-  </section>
+  </div>
 </template>
 
 <style scoped>
-.advanced-groups { margin: 0 23px 16px; border: 1px solid var(--border); border-radius: 9px; background: #f8fafc; }
-.advanced-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; font-size: 14px; font-weight: 600; }
-.advanced-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.advanced-groups { flex: 0 0 auto; }
+.advanced-toggle { min-height: 38px; }
 .advanced-toggle:disabled { cursor: wait; }
-.advanced-toggle-label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.advanced-toggle-action { flex: 0 0 auto; color: var(--accent); font-size: 13px; font-weight: 600; }
-.advanced-body { padding: 0 14px 14px; }
+.advanced-dialog { margin: auto; padding: 0; color: var(--text); width: min(780px, calc(100vw - 24px)); max-height: 90dvh; overflow-y: auto; }
+.advanced-dialog:not([open]) { display: none; }
+.advanced-dialog::backdrop { background: #21304a3b; }
+.advanced-dialog .modal-heading { position: sticky; top: 0; z-index: 1; background: #fff; }
+.advanced-body { padding: 0 28px 24px; }
 .advanced-toolbar,.advanced-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .advanced-toolbar { margin: 12px 0; }
 .advanced-toolbar p { margin: 0; }
@@ -184,7 +197,7 @@ async function apply() {
 .advanced-preview { max-height: 200px; overflow: auto; margin-top: 12px; padding: 10px; background: #f8fafc; border-radius: 8px; font-size: 13px; }
 .advanced-preview > div { padding: 5px 0; }
 @media(max-width:600px) {
-  .advanced-groups { margin-inline: 12px; }
+  .advanced-groups { margin-inline: 0; }
   .advanced-pools { gap: 8px 16px; }
   .advanced-actions { width: 100%; }
   .advanced-actions .button { flex: 1; white-space: normal; min-height: 44px; }
