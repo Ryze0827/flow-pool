@@ -19,8 +19,9 @@ GROUP_NAMES = {'Pro号池', 'Pro号池 (强制开启Fast)'}
 SNAPSHOT_TTL = 30 * 60
 GROUPS_SQL = "SELECT id, name, platform FROM groups WHERE deleted_at IS NULL AND status='active' AND platform='openai' ORDER BY id"
 
-# Same aggregate as Sub2API SumPositiveBalanceByUser: no balance counter, status
-# filter, affiliate credits, negative values or deleted users. All inputs bind.
+# Positive balance recharges and all admin balance adjustments are included.
+# Balance-order refunds that are requested or completed are deducted from that amount.
+# All inputs bind.
 INSPECTION_SQL = '''
 WITH target_users AS (
     SELECT id, username, email, restrict_public_groups FROM users
@@ -29,9 +30,19 @@ WITH target_users AS (
 ), recharge AS (
     SELECT r.used_by, SUM(r.value) AS total
     FROM redeem_codes r JOIN target_users u ON u.id = r.used_by
-    WHERE r.value > 0 AND r.type IN ('balance', 'admin_balance') GROUP BY r.used_by
+    WHERE (r.type = 'balance' AND r.value > 0) OR r.type = 'admin_balance'
+    GROUP BY r.used_by
+), refunds AS (
+    SELECT o.user_id, SUM(o.refund_amount) AS total
+    FROM payment_orders o JOIN target_users u ON u.id = o.user_id
+    WHERE o.order_type = 'balance'
+      AND o.status IN ('REFUND_REQUESTED', 'REFUNDING', 'REFUND_PENDING',
+                       'PARTIALLY_REFUNDED', 'REFUNDED')
+      AND o.refund_amount > 0
+    GROUP BY o.user_id
 )
-SELECT u.id AS user_id, u.username, u.email, COALESCE(r.total, 0) AS total,
+SELECT u.id AS user_id, u.username, u.email,
+       GREATEST(COALESCE(r.total, 0) - COALESCE(f.total, 0), 0) AS total,
        g.id AS group_id, g.name AS group_name,
        COALESCE(m.rate_multiplier, g.rate_multiplier) AS current,
        m.rate_multiplier IS NOT NULL AS custom,
@@ -39,6 +50,7 @@ SELECT u.id AS user_id, u.username, u.email, COALESCE(r.total, 0) AS total,
            SELECT 1 FROM user_allowed_groups a WHERE a.user_id = u.id AND a.group_id = g.id
        )) AS eligible
 FROM target_users u LEFT JOIN recharge r ON r.used_by = u.id
+LEFT JOIN refunds f ON f.user_id = u.id
 CROSS JOIN groups g
 LEFT JOIN user_group_rate_multipliers m ON m.user_id = u.id AND m.group_id = g.id
 WHERE g.id = ANY(%(group_ids)s::bigint[]) AND g.deleted_at IS NULL AND g.status = 'active' AND g.platform = 'openai'

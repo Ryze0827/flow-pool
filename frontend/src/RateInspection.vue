@@ -123,7 +123,7 @@ onUnmounted(() => controller?.abort())
 <template>
   <div class="rate-inspection">
     <section class="panel form-panel">
-      <div class="card-title"><div><h2>充值档位规则</h2><p>按历史累计正向充值匹配最高档位，包含管理员加款，扣款不冲减累计值。</p></div><button class="button" :disabled="!rules" @click="ruleDialog.showModal()"><Pencil :size="16"/>编辑规则</button></div>
+      <div class="card-title"><div><h2>充值档位规则</h2><p>按有效充值匹配最高档位，包含管理员加款并扣除管理员调账和已申请退款。</p></div><button class="button" :disabled="!rules" @click="ruleDialog.showModal()"><Pencil :size="16"/>编辑规则</button></div>
       <p v-if="rulesError && !rules" class="notice error" role="alert">{{ rulesError }} <button class="text-button" @click="loadRules">重试</button></p>
       <p v-if="!rules && !rulesError" class="muted">正在读取充值档位…</p>
       <div v-if="rules" class="tier-preview">
