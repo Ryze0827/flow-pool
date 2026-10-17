@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { ArrowUpCircle, ArrowUpToLine, CircleAlert, CircleCheck, Info, LoaderCircle, RefreshCw, X } from 'lucide-vue-next'
 import { api } from './api'
 import { createUpgradePolling } from './upgradePolling'
@@ -13,7 +13,6 @@ const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
 const reconnecting = ref(false)
-const steps = ref(null)
 const startedJobId = ref(null)
 const timeText = value => {
   if (!value) return '—'
@@ -24,6 +23,10 @@ const field = value => loaded.value ? (value || '—') : '…'
 const active = computed(() => submitting.value || state.value.running)
 const labels = { success: '升级完成', unchanged: '已是最新', failed: '升级失败', rolled_back: '已回退', recovery_failed: '需要处理', interrupted: '任务中断', running: '升级中' }
 const jobLabel = computed(() => labels[state.value.job?.status] || '等待升级')
+const latestStep = computed(() => {
+  const items = state.value.job?.steps
+  return items?.length ? items[items.length - 1] : null
+})
 const upgradeDone = computed(() => {
   const { job, repo } = state.value
   return job?.status === 'success' && job.new_commit === repo.commit && !repo.update_available
@@ -42,10 +45,6 @@ const statusView = computed(() => {
   if (repo.reason) return { tone: 'warning', icon: CircleAlert, title: '无法确认是否有新版本', detail: repo.reason }
   if (repo.latest_commit) return { tone: 'success', icon: CircleCheck, title: '已是最新版本', detail: `远端版本 ${repo.latest_commit.slice(0, 8)} 与当前一致。` }
   return { tone: 'neutral', icon: Info, title: '尚未检查远端版本', detail: '点击「检查更新」确认是否有新版本。' }
-})
-watch(() => state.value.job?.steps?.length, async () => {
-  await nextTick()
-  steps.value?.scrollTo({ top: steps.value.scrollHeight })
 })
 let reloading = false
 watch(upgradeDone, done => {
@@ -124,15 +123,13 @@ onUnmounted(() => {
         <component :is="statusView.icon" :size="20" :class="{ spinning: statusView.spin }"/>
         <div><strong>{{ statusView.title }}</strong><p v-if="statusView.detail">{{ statusView.detail }}</p></div>
       </div>
-      <div v-if="!loading || active" class="upgrade-version"><div><small>当前分支</small><strong>{{ field(state.repo.branch) }}</strong></div><div><small>当前版本</small><strong>{{ field(state.repo.commit?.slice(0, 8)) }}</strong><small v-if="state.repo.commit_at">提交于 {{ timeText(state.repo.commit_at) }}</small></div><div><small>更新来源</small><strong>{{ field(state.repo.upstream) }}</strong><small v-if="state.repo.latest_commit">远端 {{ state.repo.latest_commit.slice(0, 8) }} · {{ timeText(state.repo.latest_commit_at) }}</small></div></div>
-      <p v-if="!loading || active" class="small muted">先安装依赖、构建并验证，再短暂重启。部署失败会尝试回退；本地未提交改动会阻止升级。</p>
+      <div v-if="!loading || active" class="upgrade-version"><div><small>当前版本</small><strong>{{ field(state.repo.commit?.slice(0, 8)) }}</strong></div><div><small>目标版本</small><strong>{{ field((state.repo.latest_commit || state.job?.new_commit)?.slice(0, 8)) }}</strong></div></div>
+      <p v-if="!loading || active" class="small muted upgrade-hint">自动安装依赖、构建并重启；升级期间请勿进行其它写入操作。</p>
       <p v-if="busy && !active && !loading" class="notice compact">页面正在执行其他操作，完成后即可开始升级。</p>
       <div v-if="state.job && (!loading || active)" class="upgrade-progress">
         <div class="section-heading"><strong>{{ jobLabel }}</strong><span :class="['badge', ['success', 'unchanged'].includes(state.job.status) ? 'success' : active ? 'neutral' : 'warning']">{{ active ? '后台执行' : '已结束' }}</span></div>
         <p role="status" aria-live="polite">{{ reconnecting ? '暂时无法连接服务，可能正在重启，正在自动重连…' : state.job.message }}</p>
-        <small v-if="state.job.new_commit">版本 {{ state.job.old_commit.slice(0, 8) }} → {{ state.job.new_commit.slice(0, 8) }}</small>
-        <ol v-if="state.job.steps?.length" ref="steps" class="upgrade-steps"><li v-for="(step, index) in state.job.steps" :key="index" :class="{ current: active && index === state.job.steps.length - 1 }"><span>{{ step.message }}</span><time>{{ timeText(step.time) }}</time></li></ol>
-        <small class="muted">最近更新：{{ timeText(state.job.updated_at) }} · {{ active ? '每 2 秒自动刷新' : '升级任务已结束' }}</small>
+        <div class="upgrade-progress-summary"><strong v-if="latestStep">当前步骤：{{ latestStep.message }}</strong><small class="muted">最近更新：{{ timeText(state.job.updated_at) }} · {{ active ? '自动跟进中' : '任务已结束' }}</small></div>
       </div>
       <p v-if="error && (!loading || active)" class="notice error" role="alert">{{ error }}</p>
     </div>
