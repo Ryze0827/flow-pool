@@ -28,6 +28,7 @@ const removeOutcome = ref(null)
 const removeProblems = computed(() => (removeOutcome.value?.results || []).filter(item => ['skipped', 'failed'].includes(item.status)))
 const schedule = ref(null)
 const checkin = ref(null)
+const activeTab = ref('checkin')
 const checkinDraft = ref({ enabled: false, reward_tiers: [{ min_streak_days: 1, max_streak_days: 7, reward_amount: 1 }] })
 const scheduleDraft = ref({ enabled: false, show_announcement: true, start_hour: 22, end_hour: 8, start_minute: 1320, end_minute: 480, timezone: 'Asia/Shanghai', countdown_copy: { zh_opening: '', zh_closing: '', en_opening: '', en_closing: '' } })
 const enabledCount = computed(() => groups.value.filter(group => group.status === 'active').length)
@@ -123,6 +124,11 @@ function addCheckinTier() {
 function removeCheckinTier(index) {
   if (busy.value || checkinDraft.value.reward_tiers.length <= 1) return
   checkinDraft.value.reward_tiers.splice(index, 1)
+}
+
+function selectTab(tab) {
+  activeTab.value = tab
+  sourceMenuGroupId.value = null
 }
 
 async function toggle(group) {
@@ -325,12 +331,17 @@ onUnmounted(() => {
   <div class="promotion-campaigns">
     <header class="promotion-heading">
       <div><h1>促销活动</h1><p>管理促销活动关联的 GPT / OpenAI 分组状态。</p></div>
-      <button class="button" :disabled="busy" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新分组 · <span class="refresh-countdown">{{ refreshCountdownText }}</span></button>
+      <button class="button" :disabled="busy" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新数据 · <span class="refresh-countdown">{{ refreshCountdownText }}</span></button>
     </header>
 
     <p v-if="error" class="notice error" role="alert">{{ error }}</p>
 
-    <section class="panel checkin-panel" aria-labelledby="checkin-title">
+    <nav class="promotion-tabs" role="tablist" aria-label="促销活动类型">
+      <button type="button" class="promotion-tab" :class="{ active: activeTab === 'checkin' }" role="tab" aria-controls="checkin-panel" :aria-selected="activeTab === 'checkin'" @click="selectTab('checkin')"><CalendarCheck :size="16"/>每日签到</button>
+      <button type="button" class="promotion-tab" :class="{ active: activeTab === 'welfare' }" role="tab" aria-controls="welfare-panel" :aria-selected="activeTab === 'welfare'" @click="selectTab('welfare')"><MoonStar :size="16"/>夜间福利分组<span v-if="groups.length" class="promotion-tab-count">{{ groups.length }}</span></button>
+    </nav>
+
+    <section v-if="activeTab === 'checkin'" id="checkin-panel" class="panel checkin-panel" aria-labelledby="checkin-title" role="tabpanel">
       <div class="welfare-heading">
         <div class="welfare-icon"><CalendarCheck :size="21"/></div>
         <div><h2 id="checkin-title">每日签到</h2><p>记录 erxinai 用户每日签到，并按 Asia/Shanghai 统计每天参与人数。</p></div>
@@ -362,7 +373,7 @@ onUnmounted(() => {
       <p v-else-if="checkin" class="welfare-empty">暂时还没有签到记录。</p>
     </section>
 
-    <section class="panel welfare-panel" aria-labelledby="welfare-title">
+    <section v-else id="welfare-panel" class="panel welfare-panel" aria-labelledby="welfare-title" role="tabpanel">
       <div class="welfare-heading">
         <div class="welfare-icon"><MoonStar :size="21"/></div>
         <div><h2 id="welfare-title">夜间福利分组</h2><p>名称中包含“福利”的 OpenAI 平台分组，开关直接对应分组的启用状态。</p></div>
@@ -448,6 +459,12 @@ onUnmounted(() => {
 .promotion-heading { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.75rem; }
 .promotion-heading h1 { font-size: 1.6rem; }
 .promotion-heading p, .welfare-heading p { color: var(--muted); font-size: .875rem; }
+.promotion-tabs { display: flex; gap: .35rem; margin-bottom: 1.25rem; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.promotion-tab { display: inline-flex; align-items: center; gap: .45rem; flex: 0 0 auto; padding: .75rem 1rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: .88rem; white-space: nowrap; cursor: pointer; }
+.promotion-tab:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 5%, Canvas); }
+.promotion-tab.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 650; }
+.promotion-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.promotion-tab-count { display: inline-grid; min-width: 1.25rem; height: 1.25rem; padding-inline: .3rem; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--accent) 10%, Canvas); color: var(--accent); font-size: .72rem; font-variant-numeric: tabular-nums; }
 .welfare-panel { overflow: visible; }
 .checkin-panel { overflow: hidden; margin-bottom: 1.25rem; }
 .checkin-config { display: grid; grid-template-columns: minmax(15rem, 1fr) auto; align-items: end; gap: 1rem; padding: 1.25rem 1.5rem; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 3%, Canvas); }
