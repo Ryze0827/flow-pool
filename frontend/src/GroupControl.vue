@@ -130,23 +130,22 @@ onMounted(loadGroups)
       <div v-if="outcome" class="notice" role="status">
         已确认 {{ outcome.succeeded }} 个，未确认 {{ outcome.failed }} 个（目标：{{ outcome.enabled ? '强制 Fast' : '跟随全局' }}）
       </div>
-      <div class="group-table-wrap" v-if="visible.length">
-        <table class="group-table">
-          <thead><tr>
-            <th><input type="checkbox" aria-label="全选当前筛选结果" :checked="allVisibleSelected" :indeterminate="someVisibleSelected && !allVisibleSelected" :disabled="busy" @change="toggleVisible"/></th>
-            <th>分组</th><th>分组状态</th><th>OpenAI Fast</th><th>本次结果</th>
-          </tr></thead>
-          <tbody>
-            <tr v-for="group in visible" :key="group.id">
-              <td><input type="checkbox" :checked="selected.includes(group.id)" :aria-label="group.name" :disabled="busy || (!selected.includes(group.id) && selected.length >= MAX_SELECTION)" @change="toggleGroup(group.id, $event.target.checked)"/></td>
-              <td><strong>{{ group.name }}</strong><small>#{{ group.id }}</small></td>
-              <td><span :class="['badge', group.status === 'active' ? 'success' : 'neutral']">{{ statusLabel(group.status) }}</span></td>
-              <td><span :class="['badge', fastTone(group.force_openai_fast)]">{{ fastLabel(group.force_openai_fast) }}</span></td>
-              <td class="result-cell">{{ resultText(group.id) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <fieldset v-if="visible.length" class="group-selection" :disabled="busy">
+        <legend>选择分组（可多选）</legend>
+        <label class="group-select-all">
+          <input type="checkbox" aria-label="全选当前筛选结果" :checked="allVisibleSelected" :indeterminate="someVisibleSelected && !allVisibleSelected" @change="toggleVisible"/>
+          <span>全选当前筛选结果</span>
+        </label>
+        <div class="group-checkbox-grid">
+          <label v-for="group in visible" :key="group.id" :class="['group-checkbox', { selected: selected.includes(group.id) }]">
+            <input type="checkbox" :checked="selected.includes(group.id)" :disabled="!selected.includes(group.id) && selected.length >= MAX_SELECTION" :aria-label="group.name" @change="toggleGroup(group.id, $event.target.checked)"/>
+            <span class="group-checkbox-content">
+              <span class="group-checkbox-heading"><strong>{{ group.name }}</strong><small>#{{ group.id }}</small></span>
+              <span class="group-checkbox-meta"><span :class="['badge', group.status === 'active' ? 'success' : 'neutral']">{{ statusLabel(group.status) }}</span><span :class="['badge', fastTone(group.force_openai_fast)]">{{ fastLabel(group.force_openai_fast) }}</span><span v-if="resultById.has(group.id)" class="group-result">{{ resultText(group.id) }}</span></span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
       <p v-else-if="groups.length" class="muted">没有匹配的分组。</p>
       <p v-else-if="!loading && !loadError" class="muted">没有 GPT / OpenAI 分组，请先在 Sub2API 中创建分组。</p>
     </section>
@@ -173,13 +172,23 @@ onMounted(loadGroups)
 .group-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
 .group-toolbar input[type='search'] { min-width: 220px; flex: 1; }
 .group-toolbar .form-actions { margin-left: auto; }
-.group-table-wrap { overflow-x: auto; margin-top: 20px; }
-.group-table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
-.group-table th, .group-table td { padding: 14px 12px; border-bottom: 1px solid var(--border); }
-.group-table th { color: var(--muted); font-size: 12px; }
-.group-table small { display: block; margin-top: 4px; color: var(--muted); }
-.group-table input[type='checkbox'] { width: 16px; height: 16px; }
-.result-cell { white-space: normal; overflow-wrap: anywhere; min-width: 160px; color: var(--muted); }
+.group-selection { border: 0; padding: 20px 0 0; margin: 0; min-width: 0; }
+.group-selection legend { padding: 0; font-size: 14px; font-weight: 600; }
+.group-select-all { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 13px; cursor: pointer; }
+.group-select-all input { margin: 0; }
+.group-checkbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 12px; max-height: 440px; overflow: auto; padding: 2px; }
+.group-checkbox { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: #fff; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; }
+.group-checkbox:hover { border-color: #b7c8d9; background: #fbfcfe; }
+.group-checkbox.selected { border-color: #9fbfd0; background: #f4f9fb; box-shadow: 0 2px 7px #2946600b; }
+.group-checkbox input { margin: 3px 0 0; }
+.group-checkbox-content { min-width: 0; flex: 1; }
+.group-checkbox-heading { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.group-checkbox-heading strong { min-width: 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 550; }
+.group-checkbox-heading small { flex-shrink: 0; color: var(--muted); }
+.group-checkbox-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.group-result { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.group-selection:disabled .group-checkbox { cursor: wait; }
+.group-selection:disabled .group-checkbox:hover { border-color: var(--border); background: #fff; }
 .group-confirm { width: min(640px, calc(100vw - 32px)); border: 0; border-radius: 16px; padding: 28px; }
 .group-confirm::backdrop { background: #11182766; }
 .group-confirm-list { max-height: 45vh; overflow: auto; margin: 16px 0; }
