@@ -14,7 +14,7 @@ watch(priority, value => { if (!editing.value && !saving.value) draft.value = va
 
 async function save(value = draft.value) {
   if (disabled.value) return
-  const number = value === '' ? NaN : Number(value)
+  const number = value === '' || value == null ? NaN : Number(value)
   if (!Number.isInteger(number) || number < 0 || number > 10000) {
     draft.value = priority.value ?? ''
     emit('notify', '优先级须为 0–10000 的整数', true)
@@ -46,9 +46,9 @@ function finishEditing() {
 
 <template>
   <form class="priority-control" :aria-busy="saving" @submit.prevent="save()">
-    <button type="button" :disabled="disabled || draft === '' || Number(draft) <= 0" :aria-label="`降低账号 ${account.id} 优先级数值`" title="减 1" @pointerdown.prevent @click="step(-1)"><Minus :size="14"/></button>
-    <input v-model="draft" type="number" min="0" max="10000" step="1" inputmode="numeric" :disabled="disabled" :aria-label="`账号 ${account.id} 优先级`" title="输入优先级，回车或离开输入框保存" placeholder="—" @focus="editing = true" @blur="finishEditing" @keydown.esc.prevent="draft = priority ?? ''; $event.target.blur()"/>
-    <button type="button" :disabled="disabled || draft === '' || Number(draft) >= 10000" :aria-label="`提高账号 ${account.id} 优先级数值`" title="加 1" @pointerdown.prevent @click="step(1)"><Plus :size="14"/></button>
+    <a-button type="text" size="small" :disabled="disabled || draft === '' || Number(draft) <= 0" :aria-label="`降低账号 ${account.id} 优先级数值`" title="减 1" @pointerdown.prevent @click="step(-1)"><Minus :size="14"/></a-button>
+    <a-input-number v-model:value="draft" :min="0" :max="10000" :step="1" :disabled="disabled" :aria-label="`账号 ${account.id} 优先级`" title="输入优先级，回车或离开输入框保存" placeholder="—" :controls="false" size="small" @focus="editing = true" @blur="finishEditing" @press-enter="finishEditing" @keydown.esc.prevent="draft = priority ?? ''; $event.target.blur()"/>
+    <a-button type="text" size="small" :disabled="disabled || draft === '' || Number(draft) >= 10000" :aria-label="`提高账号 ${account.id} 优先级数值`" title="加 1" @pointerdown.prevent @click="step(1)"><Plus :size="14"/></a-button>
   </form>
 </template>
 
@@ -60,6 +60,8 @@ function finishEditing() {
 .priority-control button:disabled { color: #bdc6d2; }
 .priority-control input { width: 0; min-width: 0; flex: 1; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; appearance: textfield; -moz-appearance: textfield; }
 .priority-control input::-webkit-inner-spin-button, .priority-control input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.priority-control .ant-input-number { width: 0; min-width: 0; flex: 1; border: 0; box-shadow: none; background: transparent; }
+.priority-control .ant-input-number input { text-align: center; }
 .priority-control[aria-busy=true] { opacity: .65; }
 @media(max-width:600px) { .priority-control { height: 40px; } .priority-control input { font-size: 16px; } }
 </style>

@@ -1,4 +1,6 @@
 import { createApp } from 'vue'
+import Antd from 'ant-design-vue'
+import 'ant-design-vue/dist/reset.css'
 import App from './App.vue'
 import './style.css'
 
@@ -8,4 +10,4 @@ if (window.location.pathname === '/usage') {
   window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
 }
 
-createApp(App).mount('#app')
+createApp(App).use(Antd).mount('#app')

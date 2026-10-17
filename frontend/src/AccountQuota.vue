@@ -33,9 +33,7 @@ function resetText(reset) {
     <template v-if="windows.length">
       <div v-for="window in windows" :key="window.label" class="quota-window">
         <span>{{ window.label }} · 剩余 {{ Number(window.remaining.toFixed(1)) }}%<small v-if="!window.hasSnapshot" class="quota-default">默认满额</small></span>
-        <div class="quota-track" role="meter" :aria-label="`${window.label}剩余额度`" :aria-valuenow="window.remaining" aria-valuemin="0" aria-valuemax="100">
-          <span :style="{ width: `${window.remaining}%` }" :class="{ low: window.remaining <= 10, exhausted: window.remaining <= 0 }"></span>
-        </div>
+        <a-progress class="quota-progress" :percent="window.remaining" :show-info="false" :stroke-color="window.remaining <= 0 ? '#ff4d4f' : window.remaining <= 10 ? '#faad14' : '#16a085'" size="small" />
         <small v-if="!compact" :title="window.reset ? dateText(window.reset) : ''">{{ resetText(window.reset) }}</small>
       </div>
       <small v-if="!compact" :title="updated ? dateText(updated) : ''">{{ updated ? `快照 ${dateText(updated)}` : '快照时间未知' }}</small>
@@ -52,6 +50,8 @@ function resetText(reset) {
 .quota-track span { display: block; height: 100%; background: #14b8a6; }
 .quota-track span.low { background: #f59e0b; }
 .quota-track span.exhausted { background: #ef4444; }
+.quota-progress { margin-top: 4px; line-height: 1; }
+.quota-progress :deep(.ant-progress-inner) { background: #edf1f6; }
 .quota-default { display: inline !important; margin-left: 4px; }
 .quota-compact { min-width: 0; font-size: 11px; }
 .quota-compact .quota-window > span { display: block; overflow-wrap: anywhere; }

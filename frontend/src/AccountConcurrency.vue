@@ -14,7 +14,7 @@ watch(concurrency, value => { if (!editing.value && !saving.value) draft.value =
 
 async function save(value = draft.value) {
   if (disabled.value) return
-  const number = value === '' ? NaN : Number(value)
+  const number = value === '' || value == null ? NaN : Number(value)
   if (!Number.isInteger(number) || number < 1 || number > 1000) {
     draft.value = concurrency.value ?? ''
     emit('notify', '并发须为 1–1000 的整数', true)
@@ -46,9 +46,9 @@ function finishEditing() {
 
 <template>
   <form class="concurrency-control" :aria-busy="saving" @submit.prevent="save()">
-    <button type="button" :disabled="disabled || draft === '' || Number(draft) <= 1" :aria-label="`降低账号 ${account.id} 并发数值`" title="减 1" @pointerdown.prevent @click="step(-1)"><Minus :size="14"/></button>
-    <input v-model="draft" type="number" min="1" max="1000" step="1" inputmode="numeric" :disabled="disabled" :aria-label="`账号 ${account.id} 并发`" title="输入并发，回车或离开输入框保存" placeholder="—" @focus="editing = true" @blur="finishEditing" @keydown.esc.prevent="draft = concurrency ?? ''; $event.target.blur()"/>
-    <button type="button" :disabled="disabled || draft === '' || Number(draft) >= 1000" :aria-label="`提高账号 ${account.id} 并发数值`" title="加 1" @pointerdown.prevent @click="step(1)"><Plus :size="14"/></button>
+    <a-button type="text" size="small" :disabled="disabled || draft === '' || Number(draft) <= 1" :aria-label="`降低账号 ${account.id} 并发数值`" title="减 1" @pointerdown.prevent @click="step(-1)"><Minus :size="14"/></a-button>
+    <a-input-number v-model:value="draft" :min="1" :max="1000" :step="1" :disabled="disabled" :aria-label="`账号 ${account.id} 并发`" title="输入并发，回车或离开输入框保存" placeholder="—" :controls="false" size="small" @focus="editing = true" @blur="finishEditing" @press-enter="finishEditing" @keydown.esc.prevent="draft = concurrency ?? ''; $event.target.blur()"/>
+    <a-button type="text" size="small" :disabled="disabled || draft === '' || Number(draft) >= 1000" :aria-label="`提高账号 ${account.id} 并发数值`" title="加 1" @pointerdown.prevent @click="step(1)"><Plus :size="14"/></a-button>
   </form>
 </template>
 
@@ -60,6 +60,8 @@ function finishEditing() {
 .concurrency-control button:disabled { color: #bdc6d2; }
 .concurrency-control input { width: 0; min-width: 0; flex: 1; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; appearance: textfield; -moz-appearance: textfield; }
 .concurrency-control input::-webkit-inner-spin-button, .concurrency-control input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.concurrency-control .ant-input-number { width: 0; min-width: 0; flex: 1; border: 0; box-shadow: none; background: transparent; }
+.concurrency-control .ant-input-number input { text-align: center; }
 .concurrency-control[aria-busy=true] { opacity: .65; }
 @media(max-width:600px) { .concurrency-control { height: 40px; } .concurrency-control input { font-size: 16px; } }
 </style>

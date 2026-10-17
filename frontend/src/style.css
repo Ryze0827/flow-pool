@@ -356,3 +356,63 @@ input:focus, select:focus, textarea:focus,
     transition-duration: .01ms !important;
   }
 }
+
+/* Ant Design 5 visual foundation: the legacy layout remains intact while all
+   shared surfaces, controls and feedback states use the same token system. */
+:root {
+  --text: #1f2937;
+  --muted: #667085;
+  --border: #d9e1ec;
+  --control-border: #b9c6d8;
+  --accent: #1677ff;
+  --surface: #ffffff;
+  --success: #16a085;
+  --warning: #d48806;
+  --danger: #d4380d;
+}
+
+body { background: #f5f7fb; color: var(--text); }
+.app-shell main { background: linear-gradient(180deg, #f7f9fc 0%, #f5f7fb 100%); }
+.sidebar { background: #101b33; border-right: 0; box-shadow: 8px 0 28px rgba(16, 35, 65, .08); }
+.brand > span, .sidebar .workspace-label, .sidebar .nav-item, .sidebar .platform-card strong,
+.sidebar .sidebar-footer, .sidebar .collapse-toggle { color: #eef4ff; }
+.brand small, .sidebar .workspace-label span, .sidebar .platform-card small, .sidebar .sidebar-footer { color: #9eacc5; }
+.workspace-label span { border-color: #33425f; }
+.nav-item { color: #b6c3d9; }
+.nav-item:hover { background: rgba(255,255,255,.08); color: #fff; }
+.nav-item.selected { background: linear-gradient(100deg, rgba(22,119,255,.95), rgba(81,112,198,.9)); color: #fff; box-shadow: 0 8px 20px rgba(22,119,255,.2); }
+.platform-card { border-color: #2b3956; }
+.platform-icon { background: #1b2a48; color: #9db2d5; }
+.sidebar .collapse-toggle:hover { background: rgba(255,255,255,.08); }
+.topbar { background: rgba(255,255,255,.9); border-bottom-color: #e5eaf2; backdrop-filter: blur(12px); }
+.panel { border-color: #e1e8f2; border-radius: 14px; box-shadow: 0 8px 28px rgba(31, 56, 88, .06); }
+.panel-heading { border-bottom-color: #edf1f7; }
+.button, .ant-btn { border-radius: 8px; font-weight: 500; }
+.button.primary { background: #1677ff; box-shadow: 0 4px 12px rgba(22,119,255,.2); }
+.button.primary:hover:not(:disabled) { background: #4096ff; }
+.ant-btn-primary { box-shadow: 0 4px 12px rgba(22,119,255,.2); }
+.ant-btn-default:hover, .ant-btn-text:hover { color: #1677ff; }
+.ant-input, .ant-input-number, .ant-select-selector, .ant-input-affix-wrapper { border-radius: 8px !important; }
+.filters .ant-input-search { width: 190px; }
+.filters .ant-input-search.search-input { display: flex; border: 0; padding: 0; background: transparent; }
+.filters .ant-input-search .ant-input { width: auto; }
+.filters .state-select { min-width: 118px; }
+.table-toolbar { background: #fbfcfe; border-bottom-color: #e7edf5; }
+th { background: #f7f9fc; color: #667085; }
+tbody tr:hover { background: #f5faff; }
+.account-status-cell .ant-tag { margin-inline-end: 0; border-radius: 6px; }
+.badge { border-radius: 6px; }
+.stats-grid .stat-card { border-color: #e1e8f2; box-shadow: 0 6px 18px rgba(31,56,88,.05); }
+.stats-grid .ant-statistic-title { color: #667085; font-size: 13px; }
+.stats-grid .ant-statistic-content { color: #1f2937; font-size: 28px; font-weight: 650; }
+.stats-grid .ant-statistic-content-prefix { color: #1677ff; font-size: 17px; margin-inline-end: 8px; }
+.stats-grid .ant-statistic-content-suffix { color: #667085; font-size: 13px; margin-inline-start: 5px; font-weight: 400; }
+.setup-banner { border-color: #b8d5ff; background: linear-gradient(105deg, #edf6ff, #f7fbff); }
+.notice { border-radius: 8px; }
+.global-alert { margin-bottom: 16px; border-radius: 10px; }
+.empty-state { color: #667085; }
+.modal-overlay { background: rgba(15, 27, 51, .52); backdrop-filter: blur(3px); }
+.modal { border-radius: 14px; box-shadow: 0 24px 64px rgba(15, 27, 51, .2); }
+.toast { border-radius: 10px; box-shadow: 0 12px 36px rgba(15, 27, 51, .16); }
+.ant-switch-checked { background: #1677ff; }
+.search-input:has(.ant-input-search) { border: 0; padding: 0; background: transparent; }
