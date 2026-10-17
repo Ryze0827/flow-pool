@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from .postgres import Sub2Postgres, postgres_configured
 from .sub2api import Sub2API, UpstreamError
 
-GROUPS_SQL = "SELECT id, name, status, force_openai_fast FROM groups WHERE deleted_at IS NULL AND platform='openai' AND status='active' ORDER BY id"
+GROUPS_SQL = "SELECT id, name, status, force_openai_fast FROM groups WHERE deleted_at IS NULL AND platform='openai' AND status='active' AND name NOT LIKE '%生图%' ORDER BY id"
 
 
 def flag(value):
@@ -26,7 +26,8 @@ class GroupControl:
         else:
             async with Sub2API(self.store.settings()) as client:
                 groups = [group for group in await client.all('groups', platform='openai')
-                          if group.get('platform') == 'openai' and group.get('status') == 'active' and not group.get('deleted_at')]
+                          if group.get('platform') == 'openai' and group.get('status') == 'active' and not group.get('deleted_at')
+                          and '生图' not in (group.get('name') or '')]
         return [{'id': group['id'], 'name': group['name'], 'status': group.get('status', ''),
                  'force_openai_fast': flag(group.get('force_openai_fast'))} for group in groups]
 
