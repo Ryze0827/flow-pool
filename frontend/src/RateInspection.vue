@@ -238,4 +238,14 @@ onUnmounted(() => controller?.abort())
 
 .rate-confirm-list { max-height: 45vh; overflow: auto; }
 @media (max-width: 680px) { .tier-row { grid-template-columns: 1fr; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); } }
+@media (max-width: 600px) {
+  .rate-rules-dialog { width: calc(100vw - 24px); padding: 18px; }
+  .rate-rules-dialog .group-picker { max-height: none; overflow: visible; padding: 12px; }
+  .group-picker legend { font-size: 14px; line-height: 1.6; }
+  .group-tools { flex-wrap: wrap; gap: 8px; }
+  .group-tools input { flex-basis: 100%; width: 100%; }
+  .group-options { grid-template-columns: minmax(0, 1fr); }
+  .tier-row label { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+  .tier-row input { width: 100%; }
+}
 </style>

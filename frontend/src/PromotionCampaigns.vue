@@ -559,4 +559,14 @@ onUnmounted(() => {
 .welfare-member-list > div { padding: 5px 0; }
 @media (max-width: 1050px) { .welfare-schedule { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-list { padding-inline: 1.1rem; } .welfare-row { grid-template-columns: 1fr auto; } .welfare-row > div:first-child { grid-column: 1 / -1; } .welfare-rate { justify-self: start; } .welfare-copy { grid-column: 1 / -1; min-width: 0; } .source-picker { flex: 1; } .welfare-icon { display: none; } .welfare-schedule, .checkin-config { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule { display: grid; } .schedule-overview, .schedule-time-fields { grid-column: 1 / -1; } .schedule-overview { align-items: flex-start; flex-wrap: wrap; } .schedule-announcement-toggle { margin-left: 2.85rem; padding-left: 0; border-left: 0; } .schedule-time-fields { align-items: end; } .schedule-timezone { grid-column: 1 / -1; padding: .65rem 0 0; border-left: 0; border-top: 1px solid var(--border); } .welfare-schedule label, .checkin-config label { grid-column: span 1; } .checkin-tier-row { grid-template-columns: 1fr 1fr; } .checkin-tier-row label:nth-child(3) { grid-column: 1 / 2; } .checkin-tier-remove { grid-column: 2; grid-row: 2; justify-self: end; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button, .checkin-config > .button { grid-column: 1 / -1; } .checkin-summary { grid-template-columns: 1fr; } .checkin-counts { padding-inline: 1.1rem; } .checkin-count-row { grid-template-columns: 6.5rem 1fr 2rem; gap: .5rem; } }
+@media (max-width: 600px) {
+  .schedule-overview { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 12px; }
+  .schedule-toggle-copy > div { min-width: 0; }
+  .schedule-announcement-toggle { grid-column: 1 / -1; margin: 0; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--border); }
+  .schedule-time-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
+  .schedule-time-fields input { width: 100%; padding-inline: 4px; }
+  .welfare-copy { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .source-picker-trigger { height: 40px; }
+  .source-menu { width: 100%; }
+}
 </style>

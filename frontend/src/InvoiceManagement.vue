@@ -190,6 +190,7 @@ onUnmounted(() => clearInterval(polling))
   .invoice-rules-dialog { width: calc(100vw - 24px); padding: 20px 18px; }
   .invoice-rules-dialog form { max-height: calc(100vh - 64px); }
   .invoice-tier { display: grid; grid-template-columns: 1fr; gap: 10px; }
-  .invoice-tier label { min-width: 0; }
+  .invoice-tier label { min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+  .invoice-tier input { width: 100%; }
 }
 </style>

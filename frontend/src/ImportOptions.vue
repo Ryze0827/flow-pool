@@ -84,4 +84,10 @@ function applyPresetMappings() {
 .mapping-row input { min-width: 0; }
 .whitelist-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
 .whitelist-row input { min-width: 0; }
+@media (max-width: 600px) {
+  .mapping-row { grid-template-columns: minmax(0, 1fr) 40px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+  .mapping-row input { width: 100%; grid-column: 1; }
+  .mapping-row > span { grid-column: 2; grid-row: 1; text-align: center; transform: rotate(90deg); }
+  .mapping-row > button { grid-column: 2; grid-row: 2; }
+}
 </style>

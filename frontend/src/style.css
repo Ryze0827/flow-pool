@@ -372,7 +372,7 @@ input:focus, select:focus, textarea:focus,
 }
 
 body { background: #f5f7fb; color: var(--text); }
-.mobile-view-toggle { display: none; }
+.mobile-view-toggle, .mobile-page-title { display: none; }
 .app-shell main { background: linear-gradient(180deg, #f7f9fc 0%, #f5f7fb 100%); }
 .sidebar { background: #101b33; border-right: 0; box-shadow: 8px 0 28px rgba(16, 35, 65, .08); }
 .brand > span, .sidebar .workspace-label, .sidebar .nav-item, .sidebar .platform-card strong,
@@ -589,4 +589,48 @@ tbody tr:hover { background: #f5faff; }
   .accounts-panel .row-actions .schedule-action { background: #e8f1ff; color: #175cd3; font-weight: 600; }
   .usage-panel .usage-pool-grid { padding-inline: 10px; gap: 10px; }
   .usage-panel .usage-pool-heading { padding: 10px; }
+}
+
+/* Phone layout verified at 320–430px: reserve header actions and let groups wrap. */
+@media (max-width: 600px) {
+  .app-shell .topbar { position: sticky; top: 0; z-index: 14; padding: 8px 60px; height: 60px; min-height: 60px; gap: 6px; background: #fff; }
+  .app-shell .breadcrumb { min-width: 0; font-size: 0; gap: 0; }
+  .app-shell .breadcrumb > svg, .app-shell .connection, .app-shell .top-divider,
+  .app-shell .topbar-right > span { display: none; }
+  .app-shell .breadcrumb strong { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .app-shell .topbar-right { flex-shrink: 0; gap: 2px; }
+  .app-shell .topbar-right .text-button { padding-inline: 4px; min-height: 40px; }
+  .app-shell .ranking-sidebar { position: fixed; top: 8px; right: 10px; }
+  .app-shell .ranking-toggle { width: 40px; height: 44px; border: 1px solid var(--border); border-radius: 8px; box-shadow: none; }
+  .app-shell .ranking-panel { top: calc(100% + 8px); right: 0; max-height: calc(100dvh - 144px); }
+  .main-content .panel-heading, .main-content .card-title { flex-wrap: wrap; }
+  .main-content .panel-heading > div, .main-content .card-title > div { min-width: 0; }
+  .main-content .page-actions > .badge { white-space: normal; line-height: 1.6; }
+  .main-content .promotion-heading, .main-content .plaza-heading { flex-wrap: wrap; gap: 10px; }
+  .main-content .promotion-heading > div, .main-content .plaza-heading > div { flex: 1 1 160px; min-width: 0; }
+  .main-content .checkin-tiers-heading { flex-wrap: wrap; gap: 8px; }
+  .main-content .checkin-tiers-heading > div { flex: 1 1 160px; }
+  .main-content .group-toolbar .form-actions { justify-content: flex-start; }
+  .main-content .group-summary { gap: 8px 16px; }
+  .accounts-panel .advanced-toggle { width: 100%; }
+  .accounts-panel .account-list .account-identity-cell { position: static; box-shadow: none; background: transparent; }
+  .main-content .form-actions > .button { max-width: 100%; }
+  .main-content .button { height: auto; min-height: 40px; padding-block: 8px; white-space: normal; overflow-wrap: anywhere; }
+  .main-content .rule-dialog-heading > div { min-width: 0; }
+  .main-content .rule-dialog-heading h2 { font-size: 18px; }
+  .overview-content .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-content .ant-statistic-content { display: flex; align-items: baseline; justify-content: center; gap: 3px; font-size: 24px; white-space: nowrap; }
+  .overview-content .ant-statistic-content-prefix, .overview-content .ant-statistic-content-suffix { margin: 0; }
+  .mobile-compact .promotion-heading p, .mobile-compact .plaza-heading p { display: none; }
+}
+@media (max-width: 600px) {
+  .app-shell .modal .button { min-height: 40px; padding: 8px 10px; line-height: 20px; white-space: normal; overflow-wrap: anywhere; }
+  .app-shell .modal .button > svg { flex-shrink: 0; }
+  .remote-list .remote-account { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 8px 10px; }
+  .remote-list .remote-account > input { grid-column: 1; margin-top: 4px; }
+  .remote-list .remote-account > span:not(.badge), .remote-list .remote-account > small { grid-column: 2; min-width: 0; }
+  .remote-list .remote-account strong, .remote-list .remote-account small { white-space: normal; overflow-wrap: anywhere; }
+  .remote-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .remote-filters .search-input { grid-column: 1 / -1; }
+  .remote-filters select { width: 100%; min-width: 0; }
 }
