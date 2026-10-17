@@ -514,14 +514,30 @@ tbody tr:hover { background: #f5faff; }
   .mobile-compact .invoice-management .table-scroll .button { min-height: 44px; padding-inline: 8px; }
 }
 
-.mobile-label { display: none; }
+.mobile-label, .ant-btn > .mobile-label { display: none; }
 @media (max-width: 600px) {
-  .desktop-label { display: none; }
-  .mobile-label { display: inline; }
+  .desktop-label, .ant-btn > .desktop-label { display: none; }
+  .mobile-label, .ant-btn > .mobile-label { display: inline; }
   .app-shell .main-content { padding-inline: 10px; }
   .mobile-view-toggle { margin-bottom: 4px; font-size: 12px; }
   .mobile-view-toggle button { min-height: 36px; font-size: 12px; }
-  .main-content .button, .main-content .ant-btn { min-height: 40px; height: auto; padding: 7px 10px; font-size: 13px; }
+  .main-content .button, .main-content .ant-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: nowrap;
+    gap: 6px;
+    min-height: 40px;
+    height: 40px;
+    padding: 0 10px;
+    font-size: 13px;
+    line-height: 20px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .main-content .button > svg, .main-content .ant-btn > svg { flex: 0 0 auto; }
+  .main-content .ant-btn > span { margin-inline-start: 0; }
+  .main-content .form-actions, .main-content .heading-actions, .usage-panel .usage-actions { flex-wrap: wrap; gap: 8px; }
   .main-content .panel { border-radius: 10px; }
   .main-content .panel-heading { padding: 12px; gap: 8px; }
   .main-content .panel-heading h2 { font-size: 16px; }
@@ -546,10 +562,16 @@ tbody tr:hover { background: #f5faff; }
   .accounts-panel .tabs { display: flex; gap: 4px; overflow-x: auto; }
   .accounts-panel .tabs button { flex: 1 0 auto; min-height: 40px; padding: 6px; white-space: nowrap; font-size: 12px; }
   .accounts-panel .table-toolbar { gap: 8px; padding: 0 10px 10px; }
-  .accounts-panel .filters { grid-template-columns: minmax(0, 1fr) 112px; gap: 6px; }
-  .accounts-panel .filters .search-input { grid-column: 1; grid-row: 1; min-width: 0; width: 100%; min-height: 40px; }
-  .accounts-panel .filters .state-select { grid-column: 2; grid-row: 1; min-width: 0; width: 100%; height: 40px; }
-  .accounts-panel .filters > .ant-btn { grid-row: 2; }
+  .accounts-panel .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .accounts-panel .filters .search-input { grid-column: 1 / -1; grid-row: 1; min-width: 0; width: 100%; min-height: 40px; }
+  .accounts-panel .filters .state-select { grid-column: 1 / -1; grid-row: 2; min-width: 0; width: 100%; height: 40px; }
+  .accounts-panel .filters > .ant-btn { grid-row: 3; width: 100%; min-width: 0; }
+  .accounts-panel .filters .ant-input-wrapper { display: flex; width: 100%; }
+  .accounts-panel .filters .ant-input-affix-wrapper { flex: 1; min-width: 0; height: 40px; padding-block: 0; }
+  .accounts-panel .filters .ant-input-group-addon { flex: 0 0 40px; width: 40px; }
+  .accounts-panel .filters .ant-input-search-button { width: 40px; padding: 0; }
+  .accounts-panel .filters .ant-select-selector { height: 40px; align-items: center; }
+  .accounts-panel .filters .ant-select-selection-item { line-height: 38px; }
   .accounts-panel .filters .ant-input-search .ant-input { min-width: 0; font-size: 16px; }
   .mobile-compact .accounts-panel .account-list tr { padding: 10px; gap: 8px; }
   .mobile-compact .accounts-panel .account-list tbody { padding-top: 10px; gap: 8px; }
@@ -561,7 +583,9 @@ tbody tr:hover { background: #f5faff; }
   .mobile-compact .accounts-panel .account-quota-cell > .account-field-label,
   .mobile-compact .accounts-panel .quota-cell > small { display: none; }
   .mobile-compact .accounts-panel .account-list td.account-actions-cell { padding-top: 8px; }
-  .accounts-panel .row-actions .icon-button { min-height: 40px; padding: 6px 2px; }
+  .accounts-panel .row-actions .icon-button { min-width: 0; min-height: 40px; height: 40px; padding: 0 2px; gap: 4px; line-height: 20px; white-space: nowrap; }
+  .accounts-panel .row-actions .icon-button > svg { flex: 0 0 auto; }
+  .accounts-panel .row-actions .account-action-label { white-space: nowrap; }
   .accounts-panel .row-actions .schedule-action { background: #e8f1ff; color: #175cd3; font-weight: 600; }
   .usage-panel .usage-pool-grid { padding-inline: 10px; gap: 10px; }
   .usage-panel .usage-pool-heading { padding: 10px; }
