@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { Check, CircleHelp, Mail, RefreshCw, Send, ShieldCheck } from 'lucide-vue-next'
 import { api } from './api'
+import { useRefreshCountdown } from './refreshCountdown'
 
 const emit = defineEmits(['notify'])
 const settings = ref(null)
@@ -12,6 +13,7 @@ const refreshing = ref(false)
 const error = ref('')
 const detail = ref(null)
 const refreshIntervalSeconds = 10
+const { text: refreshCountdownText, reset: resetRefreshCountdown } = useRefreshCountdown(refreshIntervalSeconds)
 const statuses = { pending: '待发送', sending: '发送中', sent: '已提交 SMTP', failed: '发送失败', skipped: '已取消' }
 const kinds = { warning: '告警', cooldown: '冷却', recovery: '冷却恢复', rpm: 'RPM 增长', test: '测试', invoice: '电子发票', invoice_request: '新发票申请' }
 const timeText = value => value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '—'
@@ -19,6 +21,7 @@ let polling
 
 async function refresh() {
   if (refreshing.value) return
+  resetRefreshCountdown()
   refreshing.value = true
   try { messages.value = await api('/mail/messages') } catch (e) { error.value = e.message } finally { refreshing.value = false }
 }
@@ -77,7 +80,7 @@ onUnmounted(() => clearInterval(polling))
       <aside class="help-panel"><ShieldCheck :size="26"/><h3>关注真正的状态变化</h3><p>告警通知：慢调用比例达限、累计次数不足，或因缺少可用替补而暂缓停调时发送。</p><p>冷却通知：确认停止调度或切换生图后发送，每轮冷却只通知一次；开启替补检查时会在替补复核完成后发送。</p><p>冷却恢复通知：到期、手动提前结束或替补不可用而提前恢复时，确认恢复成功后发送，每轮一次。恢复失败不发送成功通知，不受告警间隔或守护开关影响。</p><p>RPM 告警：后台每 30 秒采样，Sub2API 总览 RPM（全站最近 5 分钟平均值）较上次增长严格超过 100% 时，每次达限采样发送一封，不受账号告警间隔或调度开关影响。首次采样、从 0 恢复或中断后先建立基线。</p><p>账号邮件仅展示账号、措施和拉起账号；未新启用替补时显示“否”，冷却措施附恢复时间。</p><hr/><p>保存后自动通知新事件，不补发历史记录。测试按钮使用当前表单配置；发送测试邮件不受通知总开关限制。</p><p>SMTP 密码在本机加密保存。邮件发送失败会记录原因，调度继续执行；发送结果不明时不自动重发，避免重复邮件。</p></aside>
     </form>
     <section class="panel mail-history">
-      <div class="panel-heading"><div><h2>发送记录 <span class="count-chip">{{ messages.length }}</span></h2><p>展示最近 100 条；已提交 SMTP 不代表收件箱已送达</p></div><button class="button" :disabled="refreshing" @click="refresh"><RefreshCw :size="15"/>刷新 · 每 {{ refreshIntervalSeconds }} 秒</button></div>
+      <div class="panel-heading"><div><h2>发送记录 <span class="count-chip">{{ messages.length }}</span></h2><p>展示最近 100 条；已提交 SMTP 不代表收件箱已送达</p></div><button class="button" :disabled="refreshing" @click="refresh"><RefreshCw :size="15"/>刷新 · {{ refreshCountdownText }}</button></div>
       <div v-if="!messages.length" class="quiet-empty">暂无发送记录，保存配置后可发送测试邮件。</div>
       <div v-else class="table-scroll"><table><thead><tr><th>时间</th><th>类型</th><th>邮件</th><th>收件人</th><th>状态</th></tr></thead><tbody><tr v-for="message in messages" :key="message.id"><td class="muted small">{{ timeText(message.created_at) }}</td><td>{{ kinds[message.kind] }}</td><td><button class="text-button mail-subject" @click="detail = message">{{ message.subject }}</button><small v-if="message.account_id">账号 #{{ message.account_id }}</small></td><td>{{ message.recipients.join('、') }}</td><td><span :class="['badge', message.status === 'sent' ? 'success' : message.status === 'failed' ? 'warning' : 'neutral']">{{ statuses[message.status] }}</span><small v-if="message.error" class="cell-error">{{ message.error }}</small></td></tr></tbody></table></div>
     </section>

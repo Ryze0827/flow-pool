@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Clock3, Copy, MoonStar, RefreshCw, Save, UserMinus, X } from 'lucide-vue-next'
 import { api } from './api'
+import { useRefreshCountdown } from './refreshCountdown'
 
 const emit = defineEmits(['notify'])
 const groups = ref([])
@@ -27,10 +28,13 @@ const scheduleDirty = computed(() => schedule.value && JSON.stringify(scheduleDr
 const busy = computed(() => loading.value || updating.value !== null || savingSchedule.value || removing.value || copying.value !== null)
 const scheduleState = computed(() => !schedule.value?.enabled ? '未开启定时控制' : schedule.value.active_now ? '当前处于福利时段' : '当前不在福利时段')
 const transitionText = computed(() => schedule.value?.next_transition_at ? new Date(schedule.value.next_transition_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '')
+const refreshIntervalSeconds = 60
+const { text: refreshCountdownText, reset: resetRefreshCountdown } = useRefreshCountdown(refreshIntervalSeconds)
 let polling
 
 async function load() {
   if (loading.value) return
+  resetRefreshCountdown()
   loading.value = true
   error.value = ''
   try {
@@ -138,7 +142,7 @@ onUnmounted(() => clearInterval(polling))
   <div class="promotion-campaigns">
     <header class="promotion-heading">
       <div><h1>促销活动</h1><p>管理促销活动关联的 GPT / OpenAI 分组状态。</p></div>
-      <button class="button" :disabled="busy" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新分组</button>
+      <button class="button" :disabled="busy" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新分组 · {{ refreshCountdownText }}</button>
     </header>
 
     <p v-if="error" class="notice error" role="alert">{{ error }}</p>

@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { CircleHelp, Copy, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-vue-next'
 import { api } from './api'
+import { useRefreshCountdown } from './refreshCountdown'
 
 const emit = defineEmits(['notify'])
 const rules = ref(null)
@@ -19,6 +20,8 @@ const invoiceRulesDialog = ref(null)
 const defaultInvoiceItem = '生产生活服务/信息服务费'
 const loading = ref(false)
 const error = ref('')
+const refreshIntervalSeconds = 10
+const { text: refreshCountdownText, reset: resetRefreshCountdown } = useRefreshCountdown(refreshIntervalSeconds)
 const statuses = { pending: '待审核', rejected: '已驳回', approved: '待上传', issued: '已开票' }
 const mailStatuses = { pending: '待发送', sending: '发送中', sent: '已提交 SMTP', failed: '发送失败', skipped: '已取消' }
 const amountValue = value => Number(value).toFixed(2)
@@ -29,6 +32,7 @@ let polling
 
 async function refresh() {
   if (loading.value) return
+  resetRefreshCountdown()
   loading.value = true
   try {
     const result = await api(`/invoices?page=${page.value}`)
@@ -133,7 +137,7 @@ onUnmounted(() => clearInterval(polling))
       </form>
     </dialog>
     <section class="panel">
-      <div class="panel-heading"><h2>发票申请 · {{ total }}</h2><button class="button" :disabled="loading || busy" @click="refresh"><RefreshCw :size="15"/>刷新</button></div>
+      <div class="panel-heading"><h2>发票申请 · {{ total }}</h2><button class="button" :disabled="loading || busy" @click="refresh"><RefreshCw :size="15"/>刷新 · {{ refreshCountdownText }}</button></div>
       <div class="table-scroll"><table><thead><tr><th>提交时间</th><th>用户</th><th>抬头</th><th>开票金额</th><th>手续费</th><th>状态</th><th>邮件</th><th>操作</th></tr></thead><tbody>
         <tr v-for="item in items" :key="item.id"><td class="small">{{ timeText(item.created_at) }}</td><td>{{ item.user_email || '#' + item.user_id }}</td><td>{{ item.title }}</td><td>{{ amount(item.amount) }}</td><td>{{ amount(item.fee) }}</td><td><span class="badge" :class="item.status === 'issued' ? 'success' : 'neutral'">{{ ['charging', 'uncertain'].includes(item.charge_status) ? '扣费待核对' : statuses[item.status] }}</span></td><td>{{ mailStatuses[item.mail_status] || '—' }}</td><td><button class="button" @click="open(item)">查看</button></td></tr>
       </tbody></table></div>

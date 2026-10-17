@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { api } from './api'
+import { useRefreshCountdown } from './refreshCountdown'
 
 defineProps({ compact: Boolean })
 
@@ -10,6 +11,8 @@ const error = ref('')
 const loading = ref(false)
 const now = ref(Date.now() / 1000)
 let polling, clock
+const refreshIntervalSeconds = 30
+const { text: refreshCountdownText, reset: resetRefreshCountdown } = useRefreshCountdown(refreshIntervalSeconds)
 const sample = computed(() => metrics.value?.sample)
 const stale = computed(() => metrics.value?.stale || (sample.value && now.value - sample.value.received_at > 65))
 const growth = computed(() => {
@@ -35,6 +38,7 @@ const detail = computed(() => {
 })
 async function refresh() {
   if (loading.value) return
+  resetRefreshCountdown()
   loading.value = true
   try { metrics.value = await api('/performance'); error.value = '' }
   catch (cause) { error.value = cause.message }
@@ -51,14 +55,15 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
 <template>
   <span v-if="compact" :class="['performance-inline', { 'orange-text': warning }]" :title="`${detail}\n${status}`" :aria-label="`性能指标：${sample?.rpm ?? '暂无数据'} RPM，${status}`"><strong>{{ sample?.rpm ?? '—' }}</strong><span>RPM</span></span>
   <div v-else class="stat-card performance-card" :title="detail">
-    <div class="stat-label">性能指标 <button class="icon-button performance-refresh" type="button" :disabled="loading" :aria-busy="loading" title="刷新性能指标" aria-label="刷新性能指标" @click="refresh"><RefreshCw :size="17" :class="{ spinning: loading }"/></button></div>
+    <div class="stat-label">性能指标 <button class="icon-button performance-refresh" type="button" :disabled="loading" :aria-busy="loading" :title="`刷新性能指标 · ${refreshCountdownText}`" :aria-label="`刷新性能指标 · ${refreshCountdownText}`" @click="refresh"><RefreshCw :size="17" :class="{ spinning: loading }"/><span>{{ refreshCountdownText }}</span></button></div>
     <div class="stat-value"><strong>{{ sample?.rpm ?? '—' }}</strong><span>RPM</span></div>
   </div>
 </template>
 
 <style scoped>
 .performance-card { min-width: 0; }
-.performance-refresh { width: 28px; height: 28px; margin: -6px; }
+.performance-refresh { width: auto; min-width: 28px; height: 28px; margin: -6px; padding-inline: 4px; gap: 4px; white-space: nowrap; }
+.performance-refresh span { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .stat-value { display: flex; align-items: baseline; }
 .stat-value strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: inherit; }
 .stat-value > span { flex-shrink: 0; }
