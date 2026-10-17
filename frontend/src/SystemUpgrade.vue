@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { ArrowUpCircle, ArrowUpToLine, CircleAlert, CircleCheck, Info, LoaderCircle, RefreshCw, X } from 'lucide-vue-next'
 import { api } from './api'
 import { createUpgradePolling } from './upgradePolling'
