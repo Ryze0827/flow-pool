@@ -142,7 +142,7 @@ onUnmounted(() => clearInterval(polling))
   <div class="promotion-campaigns">
     <header class="promotion-heading">
       <div><h1>促销活动</h1><p>管理促销活动关联的 GPT / OpenAI 分组状态。</p></div>
-      <button class="button" :disabled="busy" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新分组 · {{ refreshCountdownText }}</button>
+      <button class="button" :disabled="busy" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新分组 · <span class="refresh-countdown">{{ refreshCountdownText }}</span></button>
     </header>
 
     <p v-if="error" class="notice error" role="alert">{{ error }}</p>

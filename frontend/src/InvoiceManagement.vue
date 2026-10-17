@@ -137,7 +137,7 @@ onUnmounted(() => clearInterval(polling))
       </form>
     </dialog>
     <section class="panel">
-      <div class="panel-heading"><h2>发票申请 · {{ total }}</h2><button class="button" :disabled="loading || busy" @click="refresh"><RefreshCw :size="15"/>刷新 · {{ refreshCountdownText }}</button></div>
+      <div class="panel-heading"><h2>发票申请 · {{ total }}</h2><button class="button" :disabled="loading || busy" @click="refresh"><RefreshCw :size="15"/>刷新 · <span class="refresh-countdown">{{ refreshCountdownText }}</span></button></div>
       <div class="table-scroll"><table><thead><tr><th>提交时间</th><th>用户</th><th>抬头</th><th>开票金额</th><th>手续费</th><th>状态</th><th>邮件</th><th>操作</th></tr></thead><tbody>
         <tr v-for="item in items" :key="item.id"><td class="small">{{ timeText(item.created_at) }}</td><td>{{ item.user_email || '#' + item.user_id }}</td><td>{{ item.title }}</td><td>{{ amount(item.amount) }}</td><td>{{ amount(item.fee) }}</td><td><span class="badge" :class="item.status === 'issued' ? 'success' : 'neutral'">{{ ['charging', 'uncertain'].includes(item.charge_status) ? '扣费待核对' : statuses[item.status] }}</span></td><td>{{ mailStatuses[item.mail_status] || '—' }}</td><td><button class="button" @click="open(item)">查看</button></td></tr>
       </tbody></table></div>

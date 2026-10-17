@@ -55,7 +55,7 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
 <template>
   <span v-if="compact" :class="['performance-inline', { 'orange-text': warning }]" :title="`${detail}\n${status}`" :aria-label="`性能指标：${sample?.rpm ?? '暂无数据'} RPM，${status}`"><strong>{{ sample?.rpm ?? '—' }}</strong><span>RPM</span></span>
   <div v-else class="stat-card performance-card" :title="detail">
-    <div class="stat-label">性能指标 <button class="icon-button performance-refresh" type="button" :disabled="loading" :aria-busy="loading" :title="`刷新性能指标 · ${refreshCountdownText}`" :aria-label="`刷新性能指标 · ${refreshCountdownText}`" @click="refresh"><RefreshCw :size="17" :class="{ spinning: loading }"/><span>{{ refreshCountdownText }}</span></button></div>
+    <div class="stat-label">性能指标 <button class="icon-button performance-refresh" type="button" :disabled="loading" :aria-busy="loading" :title="`刷新性能指标 · ${refreshCountdownText}`" :aria-label="`刷新性能指标 · ${refreshCountdownText}`" @click="refresh"><RefreshCw :size="17" :class="{ spinning: loading }"/><span class="refresh-countdown">{{ refreshCountdownText }}</span></button></div>
     <div class="stat-value"><strong>{{ sample?.rpm ?? '—' }}</strong><span>RPM</span></div>
   </div>
 </template>
@@ -63,7 +63,7 @@ onUnmounted(() => { clearInterval(polling); clearInterval(clock) })
 <style scoped>
 .performance-card { min-width: 0; }
 .performance-refresh { width: auto; min-width: 28px; height: 28px; margin: -6px; padding-inline: 4px; gap: 4px; white-space: nowrap; }
-.performance-refresh span { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.performance-refresh .refresh-countdown { color: var(--muted); font-size: 11px; }
 .stat-value { display: flex; align-items: baseline; }
 .stat-value strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: inherit; }
 .stat-value > span { flex-shrink: 0; }
