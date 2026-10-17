@@ -351,17 +351,10 @@ class WelfareSchedule(BaseModel):
         return value
 
 
-class CheckInSettings(BaseModel):
-    enabled: StrictBool = False
+class CheckInRewardTier(BaseModel):
     min_streak_days: int = Field(1, strict=True, ge=1, le=3650)
     max_streak_days: int = Field(7, strict=True, ge=1, le=3650)
     reward_amount: float = Field(1, gt=0, le=10000, allow_inf_nan=False)
-
-    @model_validator(mode='after')
-    def valid_streak_range(self):
-        if self.min_streak_days > self.max_streak_days:
-            raise ValueError('连续签到天数区间的最小值不能大于最大值')
-        return self
 
     @field_validator('reward_amount')
     @classmethod
@@ -370,6 +363,38 @@ class CheckInSettings(BaseModel):
         if amount != amount.quantize(Decimal('0.0001')):
             raise ValueError('奖励额度最多支持 4 位小数')
         return value
+
+    @model_validator(mode='after')
+    def valid_streak_range(self):
+        if self.min_streak_days > self.max_streak_days:
+            raise ValueError('连续签到天数区间的最小值不能大于最大值')
+        return self
+
+
+class CheckInSettings(BaseModel):
+    enabled: StrictBool = False
+    reward_tiers: list[CheckInRewardTier] = Field(default_factory=lambda: [CheckInRewardTier()], min_length=1, max_length=20)
+
+    @model_validator(mode='before')
+    @classmethod
+    def migrate_legacy_tier(cls, value):
+        if not isinstance(value, dict) or 'reward_tiers' in value:
+            return value
+        value = dict(value)
+        value['reward_tiers'] = [{
+            'min_streak_days': value.get('min_streak_days', 1),
+            'max_streak_days': value.get('max_streak_days', 7),
+            'reward_amount': value.get('reward_amount', 1),
+        }]
+        return value
+
+    @model_validator(mode='after')
+    def valid_reward_tiers(self):
+        self.reward_tiers.sort(key=lambda tier: (tier.min_streak_days, tier.max_streak_days))
+        for previous, current in zip(self.reward_tiers, self.reward_tiers[1:]):
+            if current.min_streak_days <= previous.max_streak_days:
+                raise ValueError('连续签到奖励区间不能重叠')
+        return self
 
 
 class Enroll(BaseModel):

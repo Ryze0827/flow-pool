@@ -61,12 +61,25 @@ class Promotions:
         today_count = next((item['count'] for item in counts if item['date'] == today), 0)
         return {'settings': settings.model_dump(), 'daily_counts': counts,
                 'today_count': today_count,
-                'total_checkins': self.store.db.execute('SELECT COUNT(*) FROM checkins').fetchone()[0]}
+                'total_checkins': self.store.db.execute('SELECT COUNT(*) FROM checkins').fetchone()[0],
+                **self.checkin_legacy_fields(settings)}
+
+    @staticmethod
+    def checkin_legacy_fields(settings):
+        tiers = settings.reward_tiers
+        return {'min_streak_days': tiers[0].min_streak_days,
+                'max_streak_days': tiers[-1].max_streak_days,
+                'reward_amount': tiers[0].reward_amount if len(tiers) == 1 else None}
+
+    @staticmethod
+    def checkin_reward(settings, streak):
+        return next((tier.reward_amount for tier in settings.reward_tiers
+                     if tier.min_streak_days <= streak <= tier.max_streak_days), 0)
 
     def user_checkin_status(self, user_id):
         settings = self.store.checkin_settings()
-        return {'enabled': settings.enabled, 'min_streak_days': settings.min_streak_days,
-                'max_streak_days': settings.max_streak_days, 'reward_amount': settings.reward_amount,
+        return {'enabled': settings.enabled, 'reward_tiers': [tier.model_dump() for tier in settings.reward_tiers],
+                **self.checkin_legacy_fields(settings),
                 **self.store.checkin_status(user_id)}
 
     async def user_checkin(self, user_id):
@@ -80,7 +93,7 @@ class Promotions:
             else:
                 yesterday = (self.store.checkin_today() - timedelta(days=1)).isoformat()
                 streak = current['streak'] + 1 if current['last_checkin_date'] == yesterday else 1
-                reward = settings.reward_amount if settings.min_streak_days <= streak <= settings.max_streak_days else 0
+                reward = self.checkin_reward(settings, streak)
                 result = self.store.record_checkin(user_id, reward)
             rewarded_now = False
             if result['reward_status'] in {'pending', 'uncertain'}:
@@ -104,7 +117,8 @@ class Promotions:
 
     def save_checkin_settings(self, value, owner_id):
         self.store.save_checkin_settings(value)
-        self.store.event('checkin_settings', f'管理员 #{owner_id} 已更新签到活动配置：连续签到 {value.min_streak_days}–{value.max_streak_days} 天，{"开启" if value.enabled else "关闭"}')
+        tiers = '；'.join(f'{tier.min_streak_days}–{tier.max_streak_days} 天 +{tier.reward_amount:g}' for tier in value.reward_tiers)
+        self.store.event('checkin_settings', f'管理员 #{owner_id} 已更新签到活动配置：{tiers}，{"开启" if value.enabled else "关闭"}')
         return self.checkin_status()
 
     def user_schedule_status(self):
