@@ -164,7 +164,11 @@ class Mailer:
                 self.store.update_mail(row['id'], 'failed', '测试发送被中断，请重新发送测试邮件')
                 return
             settings = self.store.mail_settings()
-            if row['kind'] != 'invoice' and (not settings.enabled or not getattr(settings, 'notify_' + row['kind'])):
+            if row['kind'] == 'invoice_request':
+                if not settings.enabled:
+                    self.store.update_mail(row['id'], 'skipped', '邮件通知已关闭')
+                    return
+            elif row['kind'] != 'invoice' and (not settings.enabled or not getattr(settings, 'notify_' + row['kind'])):
                 self.store.update_mail(row['id'], 'skipped', '对应邮件通知已关闭')
                 return
             await self.deliver(row['id'], settings, self.store.unseal(row['payload']))

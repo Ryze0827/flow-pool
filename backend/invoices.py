@@ -242,7 +242,9 @@ class Invoices:
                     self.store.db.executemany('INSERT INTO invoice_orders VALUES (?, ?, ?)', [(self.source(), key, invoice_id) for key in value.order_ids])
             except sqlite3.IntegrityError:
                 raise HTTPException(409, '订单已申请开票，请刷新列表') from None
-            return self.get(invoice_id, user['id'])
+            result = self.get(invoice_id, user['id'])
+            self.enqueue_admin_reminder(result)
+            return result
 
     def update(self, invoice_id, **values):
         if not values.keys() <= {'status', 'charge_status', 'note', 'reviewer_id'}:
@@ -313,6 +315,16 @@ class Invoices:
                    'message_id': make_msgid(), 'attachment': str(path), 'filename': 'invoice-' + item['id'] + '.pdf'}
         cursor = self.store.db.execute('INSERT INTO mail_messages(kind, payload, created_at) VALUES (?, ?, ?)', ('invoice', self.store.seal(payload), time.time()))
         self.store.db.execute('UPDATE invoices SET mail_id=?, updated_at=? WHERE id=?', (cursor.lastrowid, time.time(), item['id']))
+
+    def enqueue_admin_reminder(self, item):
+        settings = self.store.mail_settings()
+        if not settings.enabled:
+            return
+        from email.utils import make_msgid
+        payload = {'recipients': settings.recipients, 'subject': '新的发票申请',
+                   'body': f"收到新的发票申请\n开票金额：{item['amount']} USD\n公司：{item['title']}\n提交邮箱：{item['email']}\n",
+                   'message_id': make_msgid()}
+        self.store.queue_mail('invoice_request', payload)
 
     async def upload(self, invoice_id, content):
         if len(content) > 5 * 1024 * 1024 or not content.startswith(b'%PDF-') or b'%%EOF' not in content[-4096:]:
