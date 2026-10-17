@@ -292,6 +292,16 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
   --ease-in-out: cubic-bezier(.77, 0, .175, 1);
 }
 
+/* Keep fixed mobile actions viewport anchored; filtered ancestors can become
+   containing blocks for fixed descendants in WebKit. */
+@media (max-width: 600px) {
+  .sidebar {
+    background: #fff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 body { background: #f3f6fa; }
 
 button, input, select, textarea { font-family: inherit; }

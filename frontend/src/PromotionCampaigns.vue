@@ -381,12 +381,16 @@ onUnmounted(() => {
       </div>
 
       <form v-if="schedule" class="welfare-schedule" @submit.prevent="saveSchedule">
-        <div class="schedule-toggle-copy"><Clock3 :size="18"/><div><strong>定时控制</strong><small>{{ scheduleState }}<template v-if="transitionText"> · 下次切换 {{ transitionText }}</template></small></div></div>
-        <button type="button" class="welfare-switch" role="switch" :aria-checked="scheduleDraft.enabled" aria-label="启用福利分组定时控制" :disabled="busy" @click="toggleSchedule"><span/></button>
-        <label class="schedule-announcement-toggle"><span>erxinai 公告</span><button type="button" class="welfare-switch" role="switch" :aria-checked="scheduleDraft.show_announcement" aria-label="在 erxinai 展示福利分组公告" :disabled="busy" @click="toggleAnnouncement"><span/></button></label>
-        <label>开始时间<input type="time" :value="minuteText(scheduleDraft.start_minute)" required :disabled="busy" @input="setMinute('start', $event.target.value)" /></label>
-        <label>结束时间<input type="time" :value="minuteText(scheduleDraft.end_minute)" required :disabled="busy" @input="setMinute('end', $event.target.value)" /></label>
-        <div class="schedule-timezone"><small>时区</small><strong>Asia/Shanghai</strong></div>
+        <div class="schedule-overview">
+          <div class="schedule-toggle-copy"><span class="schedule-control-icon"><Clock3 :size="17"/></span><div><strong>定时控制</strong><small>{{ scheduleState }}<template v-if="transitionText"> · 下次切换 {{ transitionText }}</template></small></div></div>
+          <button type="button" class="welfare-switch" role="switch" :aria-checked="scheduleDraft.enabled" aria-label="启用福利分组定时控制" :disabled="busy" @click="toggleSchedule"><span/></button>
+          <label class="schedule-announcement-toggle"><span>erxinai 公告</span><button type="button" class="welfare-switch" role="switch" :aria-checked="scheduleDraft.show_announcement" aria-label="在 erxinai 展示福利分组公告" :disabled="busy" @click="toggleAnnouncement"><span/></button></label>
+        </div>
+        <div class="schedule-time-fields">
+          <label>开始时间<input type="time" :value="minuteText(scheduleDraft.start_minute)" required :disabled="busy" @input="setMinute('start', $event.target.value)" /></label>
+          <label>结束时间<input type="time" :value="minuteText(scheduleDraft.end_minute)" required :disabled="busy" @input="setMinute('end', $event.target.value)" /></label>
+          <div class="schedule-timezone"><small>时区</small><strong>Asia/Shanghai</strong></div>
+        </div>
         <div class="schedule-copy-grid">
           <label>中文开启文案<input v-model.trim="scheduleDraft.countdown_copy.zh_opening" maxlength="100" required /></label>
           <label>中文关闭文案<input v-model.trim="scheduleDraft.countdown_copy.zh_closing" maxlength="100" required /></label>
@@ -493,26 +497,32 @@ onUnmounted(() => {
 .welfare-heading > div:nth-child(2) { flex: 1; min-width: 0; }
 .welfare-heading h2 { font-size: 1rem; }
 .welfare-icon { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; flex-shrink: 0; color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: .75rem; }
-.welfare-schedule { display: grid; grid-template-columns: minmax(15rem, 1fr) auto minmax(8rem, .45fr) minmax(8rem, .45fr) auto auto; align-items: end; gap: 1rem; padding: 1.25rem 1.5rem; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 3%, var(--surface)); }
-.schedule-toggle-copy { display: flex; align-items: center; gap: .7rem; align-self: center; min-width: 0; }
+.welfare-schedule { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(22rem, .95fr); gap: 1.25rem 1.5rem; padding: 1.35rem 1.5rem 1.5rem; border-top: 1px solid var(--border); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, var(--surface)), var(--surface)); }
+.schedule-overview, .schedule-time-fields { display: flex; align-items: center; min-width: 0; padding: .85rem 1rem; border: 1px solid color-mix(in srgb, var(--accent) 15%, var(--border)); border-radius: .8rem; background: color-mix(in srgb, var(--surface) 88%, var(--accent)); }
+.schedule-overview { gap: .8rem; }
+.schedule-toggle-copy { display: flex; align-items: center; gap: .7rem; min-width: 0; flex: 1; }
+.schedule-control-icon { display: grid; place-items: center; width: 2.15rem; height: 2.15rem; flex: 0 0 auto; border-radius: .65rem; color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, var(--surface)); }
 .schedule-toggle-copy > svg { flex-shrink: 0; color: var(--accent); }
 .schedule-toggle-copy strong, .schedule-toggle-copy small { display: block; }
 .schedule-toggle-copy small { margin-top: .3rem; color: var(--muted); font-size: .78rem; line-height: 1.5; }
 .welfare-schedule label { display: grid; gap: .4rem; color: var(--muted); font-size: .78rem; }
 .welfare-schedule select { min-width: 0; }
-.schedule-timezone { align-self: center; white-space: nowrap; }
+.schedule-timezone { padding-left: .85rem; border-left: 1px solid var(--border); white-space: nowrap; }
 .schedule-timezone small, .schedule-timezone strong { display: block; }
 .schedule-timezone small { margin-bottom: .35rem; color: var(--muted); font-size: .78rem; }
 .schedule-timezone strong { font-size: .82rem; }
-.schedule-announcement-toggle { display: flex !important; align-items: center; gap: .6rem; white-space: nowrap; }
+.schedule-announcement-toggle { display: flex !important; align-items: center; gap: .6rem; padding-left: .9rem; border-left: 1px solid var(--border); white-space: nowrap; }
+.schedule-time-fields { gap: .75rem; }
+.schedule-time-fields > label { flex: 1; }
 .schedule-copy-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .schedule-copy-grid input { width: 100%; }
+.welfare-schedule > .button { grid-column: 1 / -1; justify-self: start; }
 .welfare-schedule > p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
 .schedule-error { margin: 0 1.5rem 1.25rem; }
-.welfare-list { border-top: 1px solid var(--border); }
-.welfare-row { display: flex; align-items: center; gap: 1rem; min-height: 4.5rem; padding: .9rem 1.5rem; border-bottom: 1px solid var(--border); }
-.welfare-row:last-child { border-bottom: 0; }
-.welfare-row > div { flex: 1; min-width: 0; }
+.welfare-list { display: grid; gap: .65rem; padding: 1rem 1.5rem 1.5rem; border-top: 1px solid var(--border); background: #fbfcfe; }
+.welfare-row { display: grid; grid-template-columns: minmax(12rem, 1.15fr) auto minmax(18rem, 1fr) auto auto; align-items: center; gap: 1rem; min-height: 4.8rem; padding: .95rem 1rem; border: 1px solid var(--border); border-radius: .8rem; background: var(--surface); box-shadow: 0 2px 8px #24324708; transition: border-color 160ms ease-out, box-shadow 160ms ease-out; }
+.welfare-row:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); box-shadow: 0 5px 16px #24324712; }
+.welfare-row > div { min-width: 0; }
 .welfare-row strong, .welfare-row small { display: block; overflow-wrap: anywhere; }
 .welfare-row strong { font-size: .9rem; }
 .welfare-row small { margin-top: .35rem; color: var(--muted); font-size: .8rem; }
@@ -529,7 +539,7 @@ onUnmounted(() => {
 .welfare-remove { flex-shrink: 0; white-space: nowrap; }
 .welfare-copy { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; }
 .source-picker { position: relative; min-width: 0; }
-.source-picker-trigger { display: flex; align-items: center; justify-content: space-between; gap: .6rem; width: 13rem; min-height: 38px; padding: 9px 10px 9px 13px; border: 1px solid #e0e6ef; border-radius: 10px; background: #fff; color: var(--text); text-align: left; font-size: 13px; }
+.source-picker-trigger { display: flex; align-items: center; justify-content: space-between; gap: .6rem; width: 100%; min-height: 38px; padding: 9px 10px 9px 13px; border: 1px solid #e0e6ef; border-radius: 10px; background: #fff; color: var(--text); text-align: left; font-size: 13px; }
 .source-picker-trigger:hover:not(:disabled) { border-color: #b7c8da; background: #fbfcfe; }
 .source-picker-trigger:disabled { background: #f7f9fc; color: var(--muted); cursor: not-allowed; }
 .source-picker-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -547,6 +557,6 @@ onUnmounted(() => {
 .welfare-remove-dialog .modal-body { padding: 0 24px 20px; overflow-wrap: anywhere; }
 .welfare-member-list { max-height: 240px; overflow: auto; margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 3%, var(--surface)); font-size: 13px; }
 .welfare-member-list > div { padding: 5px 0; }
-@media (max-width: 1050px) { .welfare-schedule { grid-template-columns: minmax(12rem, 1fr) auto 1fr 1fr; } .schedule-timezone { grid-column: 1 / 3; } }
-@media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-row { flex-wrap: wrap; } .welfare-row > div:first-child { flex-basis: 100%; } .welfare-rate { flex: 1 1 8rem; } .welfare-copy { flex: 1 1 100%; min-width: 0; } .source-picker { flex: 1; } .source-picker-trigger { width: 100%; } .welfare-icon { display: none; } .welfare-schedule, .checkin-config { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule label, .checkin-config label { grid-column: span 1; } .checkin-tier-row { grid-template-columns: 1fr 1fr; } .checkin-tier-row label:nth-child(3) { grid-column: 1 / 2; } .checkin-tier-remove { grid-column: 2; grid-row: 2; justify-self: end; } .schedule-timezone { grid-column: 1 / 2; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button, .checkin-config > .button { grid-column: 1 / -1; } .checkin-summary { grid-template-columns: 1fr; } .checkin-counts { padding-inline: 1.1rem; } .checkin-count-row { grid-template-columns: 6.5rem 1fr 2rem; gap: .5rem; } }
+@media (max-width: 1050px) { .welfare-schedule { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-list { padding-inline: 1.1rem; } .welfare-row { grid-template-columns: 1fr auto; } .welfare-row > div:first-child { grid-column: 1 / -1; } .welfare-rate { justify-self: start; } .welfare-copy { grid-column: 1 / -1; min-width: 0; } .source-picker { flex: 1; } .welfare-icon { display: none; } .welfare-schedule, .checkin-config { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule { display: grid; } .schedule-overview, .schedule-time-fields { grid-column: 1 / -1; } .schedule-overview { align-items: flex-start; flex-wrap: wrap; } .schedule-announcement-toggle { margin-left: 2.85rem; padding-left: 0; border-left: 0; } .schedule-time-fields { align-items: end; } .schedule-timezone { grid-column: 1 / -1; padding: .65rem 0 0; border-left: 0; border-top: 1px solid var(--border); } .welfare-schedule label, .checkin-config label { grid-column: span 1; } .checkin-tier-row { grid-template-columns: 1fr 1fr; } .checkin-tier-row label:nth-child(3) { grid-column: 1 / 2; } .checkin-tier-remove { grid-column: 2; grid-row: 2; justify-self: end; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button, .checkin-config > .button { grid-column: 1 / -1; } .checkin-summary { grid-template-columns: 1fr; } .checkin-counts { padding-inline: 1.1rem; } .checkin-count-row { grid-template-columns: 6.5rem 1fr 2rem; gap: .5rem; } }
 </style>
