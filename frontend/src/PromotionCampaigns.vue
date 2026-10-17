@@ -8,12 +8,14 @@ const emit = defineEmits(['notify'])
 const groups = ref([])
 const sourceGroups = ref([])
 const copySourceByTarget = ref({})
+const rateDraft = ref({})
 const sourceMenuGroupId = ref(null)
 const sourceMenuPlacement = ref('down')
 const loading = ref(false)
 const updating = ref(null)
 const savingSchedule = ref(false)
 const savingCheckin = ref(false)
+const rateUpdating = ref(null)
 const error = ref('')
 const removeDialog = ref(null)
 const removeTarget = ref(null)
@@ -32,7 +34,7 @@ const enabledCount = computed(() => groups.value.filter(group => group.status ==
 const scheduleDirty = computed(() => schedule.value && JSON.stringify(scheduleDraft.value) !== JSON.stringify({ enabled: schedule.value.enabled, show_announcement: schedule.value.show_announcement, start_hour: schedule.value.start_hour, end_hour: schedule.value.end_hour, start_minute: schedule.value.start_minute, end_minute: schedule.value.end_minute, timezone: schedule.value.timezone, countdown_copy: schedule.value.countdown_copy }))
 const checkinDirty = computed(() => checkin.value && JSON.stringify(checkinDraft.value) !== JSON.stringify(checkin.value.settings))
 const checkinPeak = computed(() => Math.max(1, checkin.value?.today_count || 0, ...(checkin.value?.daily_counts || []).map(item => item.count)))
-const busy = computed(() => loading.value || updating.value !== null || savingSchedule.value || savingCheckin.value || removing.value || copying.value !== null)
+const busy = computed(() => loading.value || updating.value !== null || rateUpdating.value !== null || savingSchedule.value || savingCheckin.value || removing.value || copying.value !== null)
 const scheduleState = computed(() => !schedule.value?.enabled ? '未开启定时控制' : schedule.value.active_now ? '当前处于福利时段' : '当前不在福利时段')
 const transitionText = computed(() => schedule.value?.next_transition_at ? new Date(schedule.value.next_transition_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '')
 const refreshIntervalSeconds = 60
@@ -48,6 +50,7 @@ async function load() {
     const result = await api('/promotions/welfare-groups')
     groups.value = result.items
     sourceGroups.value = result.source_groups || result.items
+    rateDraft.value = Object.fromEntries(result.items.map(group => [group.id, group.rate_multiplier ?? 1]))
     schedule.value = result.schedule
     scheduleDraft.value = { enabled: result.schedule.enabled, show_announcement: result.schedule.show_announcement, start_hour: result.schedule.start_hour, end_hour: result.schedule.end_hour, start_minute: result.schedule.start_minute, end_minute: result.schedule.end_minute, timezone: result.schedule.timezone, countdown_copy: { ...result.schedule.countdown_copy } }
     checkin.value = await api('/promotions/check-in')
@@ -105,6 +108,32 @@ async function toggle(group) {
     await load()
     error.value = message
   } finally { updating.value = null }
+}
+
+function rateChanged(group) {
+  return Number(rateDraft.value[group.id]) !== Number(group.rate_multiplier ?? 1)
+}
+
+async function saveRate(group) {
+  if (rateUpdating.value !== null || !rateChanged(group)) return
+  const rate = Number(rateDraft.value[group.id])
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1000 || Math.round(rate * 10000) !== rate * 10000) {
+    error.value = '倍率必须是 0 到 1000 之间且最多 4 位小数'
+    return
+  }
+  rateUpdating.value = group.id
+  error.value = ''
+  try {
+    const result = await api(`/promotions/welfare-groups/${group.id}/rate`, 'PUT', { rate_multiplier: rate })
+    if (!result.verified) throw new Error(result.error || '福利分组倍率未确认，请刷新后重试')
+    group.rate_multiplier = result.rate_multiplier
+    rateDraft.value[group.id] = result.rate_multiplier
+    emit('notify', `${group.name}倍率已更新为 ${result.rate_multiplier}×`)
+  } catch (cause) {
+    const message = cause.message
+    await load()
+    error.value = message
+  } finally { rateUpdating.value = null }
 }
 
 async function openRemove(group) {
@@ -324,6 +353,10 @@ onUnmounted(() => {
       <div v-if="groups.length" class="welfare-list">
         <div v-for="group in groups" :key="group.id" class="welfare-row">
           <div><strong>{{ group.name }}</strong><small>#{{ group.id }} · {{ group.status === 'active' ? '正常' : group.status === 'inactive' ? '已停用' : group.status || '状态未知' }}</small></div>
+          <div class="welfare-rate">
+            <label>倍率<input v-model.number="rateDraft[group.id]" type="number" min="0" max="1000" step="0.0001" inputmode="decimal" :disabled="busy" :aria-label="`${group.name}倍率`" @keydown.enter.prevent="saveRate(group)" /></label>
+            <button type="button" class="icon-button" :disabled="busy || !rateChanged(group)" :aria-label="`保存${group.name}倍率`" :title="`保存${group.name}倍率`" @click="saveRate(group)"><Save :size="15"/></button>
+          </div>
           <div class="welfare-copy">
             <div class="source-picker">
               <button type="button" class="source-picker-trigger" :disabled="busy" :aria-expanded="sourceMenuGroupId === group.id" aria-haspopup="listbox" :aria-label="`选择复制到${group.name}的来源分组`" @click="toggleSourceMenu(group.id, $event)"><span>{{ sourceLabel(group.id) }}</span><ChevronDown :size="15" :class="{ rotated: sourceMenuGroupId === group.id }"/></button>
@@ -421,6 +454,10 @@ onUnmounted(() => {
 .welfare-row strong, .welfare-row small { display: block; overflow-wrap: anywhere; }
 .welfare-row strong { font-size: .9rem; }
 .welfare-row small { margin-top: .35rem; color: var(--muted); font-size: .8rem; }
+.welfare-rate { display: flex; align-items: end; gap: .45rem; flex-shrink: 0; }
+.welfare-rate label { display: grid; gap: .35rem; color: var(--muted); font-size: .75rem; }
+.welfare-rate input { width: 6.5rem; padding: 8px 9px; font-variant-numeric: tabular-nums; }
+.welfare-rate .icon-button { margin-bottom: 1px; border: 1px solid var(--border); }
 .welfare-switch { width: 2.8rem; height: 1.6rem; padding: .2rem; border: 0; border-radius: 2rem; background: var(--control-border); flex-shrink: 0; }
 .welfare-switch span { display: block; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: Canvas; }
 .welfare-switch[aria-checked='true'] { background: var(--accent); }
@@ -449,5 +486,5 @@ onUnmounted(() => {
 .welfare-member-list { max-height: 240px; overflow: auto; margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 3%, Canvas); font-size: 13px; }
 .welfare-member-list > div { padding: 5px 0; }
 @media (max-width: 1050px) { .welfare-schedule { grid-template-columns: minmax(12rem, 1fr) auto 1fr 1fr; } .checkin-config { grid-template-columns: minmax(12rem, 1fr) auto repeat(3, minmax(7rem, .5fr)); } .schedule-timezone { grid-column: 1 / 3; } }
-@media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-row { flex-wrap: wrap; } .welfare-row > div:first-child { flex-basis: 100%; } .welfare-copy { flex: 1; min-width: 0; } .source-picker { flex: 1; } .source-picker-trigger { width: 100%; } .welfare-icon { display: none; } .welfare-schedule, .checkin-config { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule label, .checkin-config label { grid-column: span 1; } .schedule-timezone { grid-column: 1 / 2; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button, .checkin-config > .button { grid-column: 1 / -1; } .checkin-summary { grid-template-columns: 1fr; } .checkin-counts { padding-inline: 1.1rem; } .checkin-count-row { grid-template-columns: 6.5rem 1fr 2rem; gap: .5rem; } }
+@media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-row { flex-wrap: wrap; } .welfare-row > div:first-child { flex-basis: 100%; } .welfare-rate { flex: 1 1 8rem; } .welfare-copy { flex: 1 1 100%; min-width: 0; } .source-picker { flex: 1; } .source-picker-trigger { width: 100%; } .welfare-icon { display: none; } .welfare-schedule, .checkin-config { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule label, .checkin-config label { grid-column: span 1; } .schedule-timezone { grid-column: 1 / 2; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button, .checkin-config > .button { grid-column: 1 / -1; } .checkin-summary { grid-template-columns: 1fr; } .checkin-counts { padding-inline: 1.1rem; } .checkin-count-row { grid-template-columns: 6.5rem 1fr 2rem; gap: .5rem; } }
 </style>
