@@ -372,6 +372,7 @@ input:focus, select:focus, textarea:focus,
 }
 
 body { background: #f5f7fb; color: var(--text); }
+.mobile-view-toggle { display: none; }
 .app-shell main { background: linear-gradient(180deg, #f7f9fc 0%, #f5f7fb 100%); }
 .sidebar { background: #101b33; border-right: 0; box-shadow: 8px 0 28px rgba(16, 35, 65, .08); }
 .brand > span, .sidebar .workspace-label, .sidebar .nav-item, .sidebar .platform-card strong,
@@ -469,4 +470,99 @@ tbody tr:hover { background: #f5faff; }
   .sidebar nav .nav-item:focus-visible { outline-offset: -3px; }
   .app-shell main { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
   .toast { bottom: calc(88px + env(safe-area-inset-bottom)); }
+}
+
+/* Keep the phone overview focused; full information remains one tap away. */
+@media (max-width: 600px) {
+  .mobile-view-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--muted); font-size: 13px; }
+  .mobile-view-toggle button { min-height: 44px; }
+  .mobile-compact .main-content .mobile-secondary,
+  .mobile-compact .main-content .panel-heading p,
+  .mobile-compact .main-content .card-title p,
+  .mobile-compact .main-content .page-heading p,
+  .mobile-compact .main-content .help-panel,
+  .mobile-compact .main-content .plaza-guide,
+  .mobile-compact .page-footer,
+  .mobile-compact .accounts-panel .table-footer,
+  .mobile-compact .accounts-panel .account-list .account-ratio-cell,
+  .mobile-compact .accounts-panel .account-check-cell .account-field-label,
+  .mobile-compact .accounts-panel .account-check-cell .next-check,
+  .mobile-compact .accounts-panel .account-list .account-priority-cell,
+  .mobile-compact .accounts-panel .account-list .account-concurrency-cell,
+  .mobile-compact .usage-panel .column-settings-wrap,
+  .mobile-compact .usage-panel .usage-total-duration,
+  .mobile-compact .invoice-tier-preview { display: none; }
+  .mobile-compact .accounts-panel .account-list tr {
+    grid-template-areas: 'identity identity' 'status guard' 'quota quota' 'explanation explanation' 'check check' 'actions actions';
+    gap: 10px;
+    padding: 12px;
+  }
+  .mobile-compact .accounts-panel .account-list { padding-inline: 10px; }
+  .mobile-compact .accounts-panel .account-list tbody { gap: 10px; }
+  .mobile-compact .accounts-panel .account-explanation-cell .account-field-label { display: none; }
+  .mobile-compact .accounts-panel .account-explanation-cell { font-size: 12px; color: var(--muted); }
+  .mobile-compact .overview-content .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .mobile-compact .overview-content .stat-card { min-height: 0; padding: 10px 12px; }
+  .mobile-compact .overview-content .ant-statistic-content { font-size: 24px; }
+  .mobile-compact .overview-content .performance-card { padding-block: 8px; }
+  .mobile-compact .usage-panel .usage-table { min-width: 0; width: 100%; table-layout: fixed; }
+  .mobile-compact .usage-panel .usage-table th,
+  .mobile-compact .usage-panel .usage-table td { width: auto; padding: 10px 8px; white-space: normal; overflow-wrap: anywhere; }
+  .mobile-compact .invoice-management .table-scroll table { min-width: 0; width: 100%; table-layout: fixed; }
+  .mobile-compact .invoice-management .table-scroll th,
+  .mobile-compact .invoice-management .table-scroll td { padding: 10px 6px; white-space: normal; overflow-wrap: anywhere; }
+  .mobile-compact .invoice-management .table-scroll .button { min-height: 44px; padding-inline: 8px; }
+}
+
+.mobile-label { display: none; }
+@media (max-width: 600px) {
+  .desktop-label { display: none; }
+  .mobile-label { display: inline; }
+  .app-shell .main-content { padding-inline: 10px; }
+  .mobile-view-toggle { margin-bottom: 4px; font-size: 12px; }
+  .mobile-view-toggle button { min-height: 36px; font-size: 12px; }
+  .main-content .button, .main-content .ant-btn { min-height: 40px; height: auto; padding: 7px 10px; font-size: 13px; }
+  .main-content .panel { border-radius: 10px; }
+  .main-content .panel-heading { padding: 12px; gap: 8px; }
+  .main-content .panel-heading h2 { font-size: 16px; }
+  .main-content .form-panel { padding: 14px 12px; }
+  .overview-content .page-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+  .overview-content .page-actions .ant-btn { min-width: 0; padding-inline: 4px; gap: 4px; }
+  .overview-content .page-actions .import-action { order: -2; }
+  .overview-content .page-actions .enroll-action { order: -1; }
+  .mobile-compact .overview-content .stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-bottom: 10px; }
+  .mobile-compact .overview-content .stats-grid .stat-card { min-height: 0; padding: 8px 4px; border-radius: 8px; }
+  .mobile-compact .overview-content .ant-statistic-title { font-size: 12px; margin-bottom: 2px; }
+  .mobile-compact .overview-content .ant-statistic-content { font-size: 22px; line-height: 1.3; }
+  .mobile-compact .overview-content .ant-statistic-content-prefix,
+  .mobile-compact .overview-content .ant-statistic-content-suffix { display: none; }
+  .mobile-compact .overview-content .stats-grid .performance-card { padding: 6px 10px; }
+  .mobile-compact .overview-content .performance-card .stat-value { font-size: 22px; }
+  .mobile-compact .accounts-panel .advanced-toggle { display: none; }
+  .mobile-compact .accounts-panel > .panel-heading { flex-direction: row; align-items: center; }
+  .mobile-compact .accounts-panel .panel-heading-actions { width: auto; margin-left: auto; }
+  .mobile-compact .accounts-panel .panel-heading-actions > .advanced-groups { flex: 0; }
+  .mobile-compact .accounts-panel .panel-heading-actions { gap: 0; }
+  .accounts-panel .tabs { display: flex; gap: 4px; overflow-x: auto; }
+  .accounts-panel .tabs button { flex: 1 0 auto; min-height: 40px; padding: 6px; white-space: nowrap; font-size: 12px; }
+  .accounts-panel .table-toolbar { gap: 8px; padding: 0 10px 10px; }
+  .accounts-panel .filters { grid-template-columns: minmax(0, 1fr) 112px; gap: 6px; }
+  .accounts-panel .filters .search-input { grid-column: 1; grid-row: 1; min-width: 0; width: 100%; min-height: 40px; }
+  .accounts-panel .filters .state-select { grid-column: 2; grid-row: 1; min-width: 0; width: 100%; height: 40px; }
+  .accounts-panel .filters > .ant-btn { grid-row: 2; }
+  .accounts-panel .filters .ant-input-search .ant-input { min-width: 0; font-size: 16px; }
+  .mobile-compact .accounts-panel .account-list tr { padding: 10px; gap: 8px; }
+  .mobile-compact .accounts-panel .account-list tbody { padding-top: 10px; gap: 8px; }
+  .mobile-compact .accounts-panel .account-name { min-height: 36px; align-items: center; }
+  .mobile-compact .accounts-panel .account-avatar { width: 28px; height: 28px; font-size: 12px; }
+  .mobile-compact .accounts-panel .account-name strong { font-size: 14px; }
+  .mobile-compact .accounts-panel .check-row { min-height: 32px; }
+  .mobile-compact .accounts-panel .account-list .account-quota-cell { padding: 8px; }
+  .mobile-compact .accounts-panel .account-quota-cell > .account-field-label,
+  .mobile-compact .accounts-panel .quota-cell > small { display: none; }
+  .mobile-compact .accounts-panel .account-list td.account-actions-cell { padding-top: 8px; }
+  .accounts-panel .row-actions .icon-button { min-height: 40px; padding: 6px 2px; }
+  .accounts-panel .row-actions .schedule-action { background: #e8f1ff; color: #175cd3; font-weight: 600; }
+  .usage-panel .usage-pool-grid { padding-inline: 10px; gap: 10px; }
+  .usage-panel .usage-pool-heading { padding: 10px; }
 }
