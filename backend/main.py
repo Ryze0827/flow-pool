@@ -347,8 +347,8 @@ async def model_plaza_user_checkin_submit(request: Request):
 
 
 @app.get('/api/promotions/check-in')
-async def promotion_checkin():
-    return promotions.checkin_status()
+async def promotion_checkin(page: int = Query(1, ge=1)):
+    return promotions.checkin_status(page)
 
 
 @app.put('/api/promotions/check-in')

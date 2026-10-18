@@ -1,7 +1,7 @@
 """Manage promotional GPT groups through the Sub2API admin API."""
 import asyncio
 import time
-from datetime import datetime, time as clock_time, timedelta
+from datetime import date, datetime, time as clock_time, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
@@ -54,13 +54,18 @@ class Promotions:
                 'last_check_at': self.last_check_at, 'next_check_at': self.next_check_at,
                 'error': self.error, 'interval_seconds': INTERVAL_SECONDS}
 
-    def checkin_status(self):
+    def checkin_status(self, page=1):
         settings = self.store.checkin_settings()
-        counts = self.store.checkin_counts(30)
-        today = self.store.checkin_today().isoformat()
-        today_count = next((item['count'] for item in counts if item['date'] == today), 0)
+        today = self.store.checkin_today()
+        page_size = 7
+        first = self.store.db.execute('SELECT MIN(checkin_date) FROM checkins WHERE checkin_date<=?', (today.isoformat(),)).fetchone()[0]
+        total_days = max(page_size, (today - date.fromisoformat(first)).days + 1) if first else page_size
+        pages = (total_days + page_size - 1) // page_size
+        page = max(1, min(page, pages))
+        counts = self.store.checkin_counts(page_size, (page - 1) * page_size, today)
+        today_count = self.store.db.execute('SELECT COUNT(*) FROM checkins WHERE checkin_date=?', (today.isoformat(),)).fetchone()[0]
         return {'settings': settings.model_dump(), 'daily_counts': counts,
-                'today_count': today_count,
+                'today_count': today_count, 'page': page, 'page_size': page_size, 'pages': pages, 'total_days': total_days,
                 'total_checkins': self.store.db.execute('SELECT COUNT(*) FROM checkins').fetchone()[0],
                 **self.checkin_legacy_fields(settings)}
 

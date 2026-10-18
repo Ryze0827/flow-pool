@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { CalendarCheck, ChevronDown, Clock3, Copy, MoonStar, Plus, RefreshCw, Save, Trash2, UserMinus, Users, X } from 'lucide-vue-next'
+import { CalendarCheck, ChevronDown, ChevronLeft, ChevronRight, Clock3, Copy, MoonStar, Pencil, Plus, RefreshCw, Save, Trash2, UserMinus, Users, X } from 'lucide-vue-next'
 import { api } from './api'
 import { useRefreshCountdown } from './refreshCountdown'
 
@@ -28,14 +28,24 @@ const removeOutcome = ref(null)
 const removeProblems = computed(() => (removeOutcome.value?.results || []).filter(item => ['skipped', 'failed'].includes(item.status)))
 const schedule = ref(null)
 const checkin = ref(null)
+const checkinDialog = ref(null)
+const checkinRulesError = ref('')
+const checkinPage = ref(1)
+const checkinCountsLoading = ref(false)
 const activeTab = ref('checkin')
 const checkinDraft = ref({ enabled: false, reward_tiers: [{ min_streak_days: 1, max_streak_days: 7, reward_amount: 1 }] })
 const scheduleDraft = ref({ enabled: false, show_announcement: true, start_hour: 22, end_hour: 8, start_minute: 1320, end_minute: 480, timezone: 'Asia/Shanghai', countdown_copy: { zh_opening: '', zh_closing: '', en_opening: '', en_closing: '' } })
 const enabledCount = computed(() => groups.value.filter(group => group.status === 'active').length)
 const scheduleDirty = computed(() => schedule.value && JSON.stringify(scheduleDraft.value) !== JSON.stringify({ enabled: schedule.value.enabled, show_announcement: schedule.value.show_announcement, start_hour: schedule.value.start_hour, end_hour: schedule.value.end_hour, start_minute: schedule.value.start_minute, end_minute: schedule.value.end_minute, timezone: schedule.value.timezone, countdown_copy: schedule.value.countdown_copy }))
 const checkinDirty = computed(() => checkin.value && JSON.stringify(checkinDraft.value) !== JSON.stringify(normalizeCheckinSettings(checkin.value.settings)))
-const checkinPeak = computed(() => Math.max(1, checkin.value?.today_count || 0, ...(checkin.value?.daily_counts || []).map(item => item.count)))
-const busy = computed(() => loading.value || updating.value !== null || rateUpdating.value !== null || savingSchedule.value || savingCheckin.value || removing.value || copying.value !== null)
+const savedCheckinTiers = computed(() => checkin.value ? normalizeCheckinSettings(checkin.value.settings).reward_tiers.sort((left, right) => left.min_streak_days - right.min_streak_days) : [])
+const checkinPages = computed(() => checkin.value?.pages || 1)
+const checkinDateRange = computed(() => {
+  const counts = checkin.value?.daily_counts || []
+  return checkinPage.value === 1 ? '最近 7 天' : `${counts.at(-1)?.date || ''} 至 ${counts[0]?.date || ''}`
+})
+const checkinPeak = computed(() => Math.max(1, ...(checkin.value?.daily_counts || []).map(item => item.count)))
+const busy = computed(() => loading.value || checkinCountsLoading.value || updating.value !== null || rateUpdating.value !== null || savingSchedule.value || savingCheckin.value || removing.value || copying.value !== null)
 const scheduleState = computed(() => !schedule.value?.enabled ? '未开启定时控制' : schedule.value.active_now ? '当前处于福利时段' : '当前不在福利时段')
 const transitionText = computed(() => schedule.value?.next_transition_at ? new Date(schedule.value.next_transition_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '')
 const refreshIntervalSeconds = 60
@@ -67,12 +77,38 @@ async function load() {
     rateDraft.value = Object.fromEntries(result.items.map(group => [group.id, group.rate_multiplier ?? 1]))
     schedule.value = result.schedule
     scheduleDraft.value = { enabled: result.schedule.enabled, show_announcement: result.schedule.show_announcement, start_hour: result.schedule.start_hour, end_hour: result.schedule.end_hour, start_minute: result.schedule.start_minute, end_minute: result.schedule.end_minute, timezone: result.schedule.timezone, countdown_copy: { ...result.schedule.countdown_copy } }
-    checkin.value = await api('/promotions/check-in')
+    checkin.value = await api(`/promotions/check-in?page=${checkinPage.value}`)
+    checkinPage.value = checkin.value.page
     checkinDraft.value = normalizeCheckinSettings(checkin.value.settings)
   }
   catch (cause) { error.value = cause.message }
   finally { loading.value = false }
 }
+
+async function changeCheckinPage(page) {
+  if (busy.value || page < 1 || page > checkinPages.value || page === checkinPage.value) return
+  checkinCountsLoading.value = true
+  error.value = ''
+  try {
+    const result = await api(`/promotions/check-in?page=${page}`)
+    checkin.value = result
+    checkinPage.value = result.page
+  } catch (cause) { error.value = cause.message }
+  finally { checkinCountsLoading.value = false }
+}
+
+function openCheckinRules() {
+  checkinDraft.value = normalizeCheckinSettings(checkin.value.settings)
+  checkinRulesError.value = ''
+  checkinDialog.value.showModal()
+}
+
+function resetCheckinDraft() {
+  if (checkin.value) checkinDraft.value = normalizeCheckinSettings(checkin.value.settings)
+  checkinRulesError.value = ''
+}
+
+const rewardText = value => Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 4 })
 
 async function saveCheckin() {
   if (savingCheckin.value || !checkinDirty.value) return
@@ -87,16 +123,18 @@ async function saveCheckin() {
     !Number.isFinite(tier.reward_amount) || tier.reward_amount <= 0 || tier.reward_amount > 10000 ||
     Math.abs(tier.reward_amount * 10000 - Math.round(tier.reward_amount * 10000)) > 1e-7) ||
     rewardTiers.some((tier, index) => index > 0 && tier.min_streak_days <= rewardTiers[index - 1].max_streak_days)) {
-    error.value = '请输入不重叠的连续签到奖励区间和有效额度'
+    checkinRulesError.value = '请输入不重叠的连续签到奖励区间和有效额度'
     return
   }
   savingCheckin.value = true
-  error.value = ''
+  checkinRulesError.value = ''
   try {
-    await api('/promotions/check-in', 'PUT', { enabled: checkinDraft.value.enabled, reward_tiers: rewardTiers })
-    await load()
+    const result = await api('/promotions/check-in', 'PUT', { enabled: checkinDraft.value.enabled, reward_tiers: rewardTiers })
+    checkin.value = { ...checkin.value, settings: result.settings }
+    checkinDraft.value = normalizeCheckinSettings(result.settings)
+    checkinDialog.value.close()
     emit('notify', '签到活动配置已保存')
-  } catch (cause) { await reloadAfterFailure(cause.message) }
+  } catch (cause) { checkinRulesError.value = cause.message }
   finally { savingCheckin.value = false }
 }
 
@@ -318,7 +356,7 @@ onMounted(() => {
   void load()
   document.addEventListener('click', closeSourceMenu)
   polling = setInterval(() => {
-    if (!busy.value && !scheduleDirty.value) void load()
+    if (!busy.value && !scheduleDirty.value && !checkinDialog.value?.open) void load()
   }, 60000)
 })
 onUnmounted(() => {
@@ -347,30 +385,40 @@ onUnmounted(() => {
         <div><h2 id="checkin-title">每日签到</h2><p>记录 erxinai 用户每日签到，并按 Asia/Shanghai 统计每天参与人数。</p></div>
         <span v-if="checkin" class="badge" :class="checkin.settings.enabled ? 'success' : 'neutral'">{{ checkin.settings.enabled ? '活动进行中' : '未开启' }}</span>
       </div>
-      <form v-if="checkin" class="checkin-config" @submit.prevent="saveCheckin">
+      <div v-if="checkin" class="checkin-config">
         <div class="schedule-toggle-copy"><CalendarCheck :size="18"/><div><strong>开启签到活动</strong><small>{{ checkin.settings.enabled ? '用户可以在 erxinai 顶部签到' : '开启后用户即可签到' }}</small></div></div>
         <button type="button" class="welfare-switch" role="switch" :aria-checked="checkinDraft.enabled" aria-label="开启签到活动" :disabled="busy" @click="toggleCheckin"><span/></button>
         <div class="checkin-tiers">
-          <div class="checkin-tiers-heading"><div><strong>连续签到奖励区间</strong><small><span class="mobile-full-copy">按连续签到天数匹配奖励额度，区间不能重叠。</span><span class="mobile-brief-copy">天数区间不能重叠。</span></small></div><button type="button" class="button" :disabled="busy || checkinDraft.reward_tiers.length >= 20" @click="addCheckinTier"><Plus :size="15"/>新增区间</button></div>
-          <div v-for="(tier, index) in checkinDraft.reward_tiers" :key="index" class="checkin-tier-row">
-            <label>最少天数<input v-model.number="tier.min_streak_days" type="number" min="1" max="3650" required :disabled="busy" /></label>
-            <label>最多天数<input v-model.number="tier.max_streak_days" type="number" min="1" max="3650" required :disabled="busy" /></label>
-            <label>奖励额度<input v-model.number="tier.reward_amount" type="number" min="0.0001" max="10000" step="0.0001" required :disabled="busy" /></label>
-            <button type="button" class="icon-button checkin-tier-remove" :disabled="busy || checkinDraft.reward_tiers.length <= 1" aria-label="删除此奖励区间" title="删除此奖励区间" @click="removeCheckinTier(index)"><Trash2 :size="15"/></button>
-          </div>
+          <div class="checkin-tiers-heading"><strong>连续签到奖励区间</strong><button type="button" class="button" :disabled="busy" @click="openCheckinRules"><Pencil :size="15"/>编辑规则</button></div>
+          <ol class="checkin-tier-preview" aria-label="已保存的连续签到奖励区间"><li v-for="tier in savedCheckinTiers" :key="tier.min_streak_days"><small>连续 {{ tier.min_streak_days }}–{{ tier.max_streak_days }} 天</small><strong>+{{ rewardText(tier.reward_amount) }} 额度</strong></li></ol>
         </div>
-        <button class="button primary" type="submit" :disabled="busy || !checkinDirty"><Save :size="15"/> {{ savingCheckin ? '保存中…' : '保存签到配置' }}</button>
-        <p><span class="mobile-full-copy">例如 1–3 天奖励 1，4–7 天奖励 2；签到记录会按用户和日期去重。</span><span class="mobile-brief-copy">同一用户每天仅计一次签到。</span></p>
-      </form>
+      </div>
       <div v-if="checkin" class="checkin-summary">
         <div class="checkin-stat"><Users :size="18"/><span>今日签到人数</span><strong>{{ checkin.today_count }}</strong></div>
         <div class="checkin-stat"><CalendarCheck :size="18"/><span>累计签到次数</span><strong>{{ checkin.total_checkins }}</strong></div>
       </div>
-      <div v-if="checkin?.daily_counts?.length" class="checkin-counts">
-        <div class="checkin-counts-heading"><strong>每日签到人数</strong><small>最近 {{ checkin.daily_counts.length }} 天</small></div>
+      <div v-if="checkin?.daily_counts?.length" class="checkin-counts" :aria-busy="checkinCountsLoading">
+        <div class="checkin-counts-heading"><strong>每日签到人数</strong><small>{{ checkinDateRange }}</small></div>
         <div v-for="item in checkin.daily_counts" :key="item.date" class="checkin-count-row"><time>{{ item.date }}</time><div><i :style="{ width: `${item.count / checkinPeak * 100}%` }"/></div><strong>{{ item.count }}</strong></div>
+        <div v-if="checkinPages > 1" class="checkin-pagination"><small aria-live="polite">{{ checkinCountsLoading ? '加载中…' : `第 ${checkinPage} / ${checkinPages} 页` }}</small><div><button type="button" class="button" :disabled="busy || checkinPage <= 1" @click="changeCheckinPage(checkinPage - 1)"><ChevronLeft :size="14"/>上一页</button><button type="button" class="button" :disabled="busy || checkinPage >= checkinPages" @click="changeCheckinPage(checkinPage + 1)">下一页<ChevronRight :size="14"/></button></div></div>
       </div>
       <p v-else-if="checkin" class="welfare-empty">暂时还没有签到记录。</p>
+      <dialog ref="checkinDialog" class="modal import-settings-dialog checkin-rules-dialog" aria-labelledby="checkin-rules-title" @click.self="!savingCheckin && checkinDialog.close()" @cancel="savingCheckin && $event.preventDefault()" @close="resetCheckinDraft">
+        <form v-if="checkin" @submit.prevent="saveCheckin">
+          <div class="modal-heading"><div><h2 id="checkin-rules-title">连续签到奖励区间</h2><p>按连续签到天数匹配奖励，区间不能重叠。</p></div><button type="button" class="icon-button" :disabled="savingCheckin" aria-label="关闭签到规则窗口" @click="checkinDialog.close()"><X :size="20"/></button></div>
+          <div class="modal-body checkin-rules-body">
+            <div class="checkin-tiers-heading"><small>共 {{ checkinDraft.reward_tiers.length }} 个区间</small><button type="button" class="button" :disabled="busy || checkinDraft.reward_tiers.length >= 20" @click="addCheckinTier"><Plus :size="15"/>新增区间</button></div>
+            <div v-for="(tier, index) in checkinDraft.reward_tiers" :key="index" class="checkin-tier-row">
+              <label>最少天数<input v-model.number="tier.min_streak_days" type="number" min="1" max="3650" required :disabled="busy" /></label>
+              <label>最多天数<input v-model.number="tier.max_streak_days" type="number" min="1" max="3650" required :disabled="busy" /></label>
+              <label>奖励额度<input v-model.number="tier.reward_amount" type="number" min="0.0001" max="10000" step="0.0001" required :disabled="busy" /></label>
+              <button type="button" class="icon-button checkin-tier-remove" :disabled="busy || checkinDraft.reward_tiers.length <= 1" aria-label="删除此奖励区间" title="删除此奖励区间" @click="removeCheckinTier(index)"><Trash2 :size="15"/></button>
+            </div>
+            <p v-if="checkinRulesError" class="notice error" role="alert">{{ checkinRulesError }}</p>
+          </div>
+          <div class="modal-footer"><button type="button" class="button" :disabled="savingCheckin" @click="checkinDialog.close()">取消</button><button class="button primary" type="submit" :disabled="busy || !checkinDirty"><Save :size="15"/>{{ savingCheckin ? '保存中…' : '保存规则' }}</button></div>
+        </form>
+      </dialog>
     </section>
 
     <section v-else id="welfare-panel" class="panel welfare-panel" aria-labelledby="welfare-title" role="tabpanel">
@@ -472,12 +520,18 @@ onUnmounted(() => {
 .welfare-panel { overflow: visible; }
 .checkin-panel { overflow: hidden; margin-bottom: 1.25rem; }
 .checkin-config { display: grid; grid-template-columns: minmax(15rem, 1fr) auto; align-items: end; gap: 1rem; padding: 1.25rem 1.5rem; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 3%, var(--surface)); }
-.checkin-config label { display: grid; gap: .4rem; color: var(--muted); font-size: .78rem; }
-.checkin-config > p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
+.checkin-rules-body label { display: grid; gap: .4rem; color: var(--muted); font-size: .78rem; }
 .checkin-tiers { grid-column: 1 / -1; display: grid; gap: .7rem; width: 100%; }
 .checkin-tiers-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.checkin-tiers-heading > div { display: grid; gap: .25rem; }
 .checkin-tiers-heading small { color: var(--muted); font-size: .78rem; }
+.checkin-tier-preview { display: flex; flex-wrap: wrap; gap: .65rem; margin: 0; padding: 0; list-style: none; }
+.checkin-tier-preview li { display: grid; gap: 2px; min-width: 120px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.checkin-tier-preview small { color: var(--muted); font-size: .78rem; }
+.checkin-tier-preview strong { font-size: 18px; }
+.checkin-rules-dialog { width: 760px; max-height: calc(100dvh - 48px); }
+.checkin-rules-dialog > form { max-height: calc(100dvh - 48px); }
+.checkin-rules-body { display: grid; gap: .8rem; overflow: auto; }
+.checkin-rules-dialog .modal-footer { justify-content: flex-end; gap: .6rem; }
 .checkin-tier-row { display: grid; grid-template-columns: repeat(3, minmax(8rem, 1fr)) auto; align-items: end; gap: .8rem; padding: .8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 .checkin-tier-remove { margin-bottom: .1rem; color: var(--muted); }
 .checkin-tier-remove:hover:not(:disabled) { color: #b42318; }
@@ -487,12 +541,15 @@ onUnmounted(() => {
 .checkin-stat span { color: var(--muted); font-size: .78rem; }
 .checkin-stat strong { font-size: 1.3rem; }
 .checkin-counts { padding: 1.2rem 1.5rem 1.4rem; border-top: 1px solid var(--border); }
-.checkin-counts-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .9rem; }
+.checkin-counts-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: .9rem; }
 .checkin-counts-heading small { color: var(--muted); font-size: .78rem; }
 .checkin-count-row { display: grid; grid-template-columns: 7rem 1fr 3rem; align-items: center; gap: .8rem; min-height: 2rem; font-size: .8rem; }
 .checkin-count-row > div { height: .45rem; overflow: hidden; border-radius: 1rem; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
 .checkin-count-row i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .checkin-count-row strong { text-align: right; }
+.checkin-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--border); }
+.checkin-pagination > small { color: var(--muted); font-size: .78rem; }
+.checkin-pagination > div { display: flex; gap: .5rem; }
 .welfare-heading { display: flex; align-items: center; gap: 1rem; padding: 1.5rem; }
 .welfare-heading > div:nth-child(2) { flex: 1; min-width: 0; }
 .welfare-heading h2 { font-size: 1rem; }
@@ -558,7 +615,7 @@ onUnmounted(() => {
 .welfare-member-list { max-height: 240px; overflow: auto; margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 3%, var(--surface)); font-size: 13px; }
 .welfare-member-list > div { padding: 5px 0; }
 @media (max-width: 1050px) { .welfare-schedule { grid-template-columns: 1fr; } }
-@media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-list { padding-inline: 1.1rem; } .welfare-row { grid-template-columns: 1fr auto; } .welfare-row > div:first-child { grid-column: 1 / -1; } .welfare-rate { justify-self: start; } .welfare-copy { grid-column: 1 / -1; min-width: 0; } .source-picker { flex: 1; } .welfare-icon { display: none; } .welfare-schedule, .checkin-config { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule { display: grid; } .schedule-overview, .schedule-time-fields { grid-column: 1 / -1; } .schedule-overview { align-items: flex-start; flex-wrap: wrap; } .schedule-announcement-toggle { margin-left: 2.85rem; padding-left: 0; border-left: 0; } .schedule-time-fields { align-items: end; } .schedule-timezone { grid-column: 1 / -1; padding: .65rem 0 0; border-left: 0; border-top: 1px solid var(--border); } .welfare-schedule label, .checkin-config label { grid-column: span 1; } .checkin-tier-row { grid-template-columns: 1fr 1fr; } .checkin-tier-row label:nth-child(3) { grid-column: 1 / 2; } .checkin-tier-remove { grid-column: 2; grid-row: 2; justify-self: end; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button, .checkin-config > .button { grid-column: 1 / -1; } .checkin-summary { grid-template-columns: 1fr; } .checkin-counts { padding-inline: 1.1rem; } .checkin-count-row { grid-template-columns: 6.5rem 1fr 2rem; gap: .5rem; } }
+@media (max-width: 600px) { .promotion-heading { align-items: flex-start; } .promotion-heading h1 { font-size: 1.35rem; } .welfare-heading, .welfare-row { padding-inline: 1.1rem; } .welfare-list { padding-inline: 1.1rem; } .welfare-row { grid-template-columns: 1fr auto; } .welfare-row > div:first-child { grid-column: 1 / -1; } .welfare-rate { justify-self: start; } .welfare-copy { grid-column: 1 / -1; min-width: 0; } .source-picker { flex: 1; } .welfare-icon { display: none; } .welfare-schedule, .checkin-config { grid-template-columns: 1fr auto; padding-inline: 1.1rem; } .welfare-schedule { display: grid; } .schedule-overview, .schedule-time-fields { grid-column: 1 / -1; } .schedule-overview { align-items: flex-start; flex-wrap: wrap; } .schedule-announcement-toggle { margin-left: 2.85rem; padding-left: 0; border-left: 0; } .schedule-time-fields { align-items: end; } .schedule-timezone { grid-column: 1 / -1; padding: .65rem 0 0; border-left: 0; border-top: 1px solid var(--border); } .welfare-schedule label, .checkin-rules-body label { grid-column: span 1; } .checkin-tier-row { grid-template-columns: 1fr 1fr; } .checkin-tier-row label:nth-child(3) { grid-column: 1 / 2; } .checkin-tier-remove { grid-column: 2; grid-row: 2; justify-self: end; } .schedule-copy-grid { grid-template-columns: 1fr; } .welfare-schedule > .button { grid-column: 1 / -1; } .checkin-summary { grid-template-columns: 1fr; } .checkin-counts { padding-inline: 1.1rem; } .checkin-count-row { grid-template-columns: 6.5rem 1fr 2rem; gap: .5rem; } }
 @media (max-width: 600px) {
   .schedule-overview { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 12px; }
   .schedule-toggle-copy > div { min-width: 0; }

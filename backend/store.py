@@ -232,13 +232,15 @@ class Store:
                         (status, user_id, checkin_date))
         self.db.commit()
 
-    def checkin_counts(self, limit=30):
-        today = self.checkin_today()
+    def checkin_counts(self, limit=7, offset=0, today=None):
+        today = today or self.checkin_today()
+        end = today - timedelta(days=offset)
+        start = end - timedelta(days=limit - 1)
         rows = {row['date']: row['count'] for row in self.db.execute(
-            'SELECT checkin_date AS date, COUNT(*) AS count FROM checkins WHERE checkin_date>=? GROUP BY checkin_date',
-            ((today - timedelta(days=limit - 1)).isoformat(),))}
-        return [{'date': (today - timedelta(days=offset)).isoformat(), 'count': rows.get((today - timedelta(days=offset)).isoformat(), 0)}
-                for offset in range(limit)]
+            'SELECT checkin_date AS date, COUNT(*) AS count FROM checkins WHERE checkin_date BETWEEN ? AND ? GROUP BY checkin_date',
+            (start.isoformat(), end.isoformat()))}
+        return [{'date': (end - timedelta(days=day)).isoformat(), 'count': rows.get((end - timedelta(days=day)).isoformat(), 0)}
+                for day in range(limit)]
 
     def queue_mail(self, kind, payload, account_id=None, event_key=None, interval=0):
         if interval and self.db.execute('''SELECT 1 FROM mail_messages WHERE account_id=? AND kind=?
