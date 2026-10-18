@@ -4,7 +4,7 @@ import AdvancedGroupMembership from './AdvancedGroupMembership.vue'
 import AccountPriority from './AccountPriority.vue'
 import AccountConcurrency from './AccountConcurrency.vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Activity, ArrowDownToLine, ArrowRight, BadgePercent, Check, CheckCheck, ChevronRight, CircleHelp, Clock3, CloudUpload, Database, FileJson, Gauge, Layers3, LayoutDashboard, ListFilter, LoaderCircle, LogOut, Mail, Pause, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Unplug, X, Zap } from 'lucide-vue-next'
+import { Activity, ArrowDownToLine, ArrowRight, BadgePercent, Check, CheckCheck, ChevronRight, CircleHelp, Clock3, CloudUpload, Database, FileJson, Gauge, Layers3, LayoutDashboard, ListFilter, LoaderCircle, LogOut, Mail, Pause, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal, Unplug, X, Zap } from 'lucide-vue-next'
 import { api } from './api'
 import ImportOptions from './ImportOptions.vue'
 import LoginImport from './LoginImport.vue'
@@ -617,11 +617,13 @@ onUnmounted(() => {
   <AdminLogin v-if="auth.ready && !auth.authenticated" :configured="auth.configured" :status-error="authStatusError" @retry-status="loadAuthStatus" @authenticated="handleAuthenticated"/>
   <div v-else-if="auth.ready" :class="['app-shell', { 'sidebar-collapsed': sidebarCollapsed, 'overview-shell': page === 'overview', 'mobile-compact': !mobileDetails, 'mobile-subpage': page !== 'overview' }]">
     <aside class="sidebar">
-      <a href="#" class="brand" @click.prevent="page = 'overview'"><img class="brand-mark" src="/favicon.svg" alt="" width="40" height="40"/><span>FlowPool<small>GPT 账号调控</small></span></a>
-      <SystemUpgrade :busy="busy || loginLoading"/>
+      <div class="brand"><a href="#" class="brand-home" aria-label="FlowPool 首页" @click.prevent="page = 'overview'"><img class="brand-mark" src="/favicon.svg" alt="" width="40" height="40"/></a><div class="brand-details"><a href="#" class="brand-name" @click.prevent="page = 'overview'">FlowPool</a><SystemUpgrade :busy="busy || loginLoading"/></div></div>
       <div class="workspace-label">WORKSPACE <span>本地</span></div>
       <nav aria-label="主导航"><button v-for="item in nav" :key="item.id" :class="['nav-item', { selected: page === item.id }]" @click="page = item.id"><component :is="item.icon" :size="18"/><span>{{ item.name }}</span></button></nav>
-      <div class="sidebar-bottom"><div class="platform-card"><div class="platform-icon"><Sparkles :size="18"/></div><div><strong>GPT / OpenAI</strong><small>覆盖所有上游分组</small></div><span class="dot green"></span></div><button :class="['nav-item', { selected: page === 'settings' }]" @click="page = 'settings'"><Settings2 :size="18"/><span>连接设置</span><span v-if="data.configured" class="dot green"></span></button><button class="collapse-toggle" :aria-label="sidebarCollapsed ? '展开菜单' : '收起菜单'" @click="toggleSidebar"><ChevronRight :size="16"/><span>{{ sidebarCollapsed ? '展开菜单' : '收起菜单' }}</span></button><div class="sidebar-footer"><span>FlowPool <b>v1.0</b></span><span>LOCAL FIRST</span></div></div>
+      <div class="sidebar-bottom">
+        <button :class="['nav-item', { selected: page === 'settings' }]" title="连接设置" aria-label="连接设置" @click="page = 'settings'"><Settings2 :size="18"/><span>连接设置</span><span v-if="data.configured" class="dot green" aria-hidden="true"></span></button>
+        <button class="collapse-toggle" :title="sidebarCollapsed ? '展开菜单' : '收起菜单'" :aria-label="sidebarCollapsed ? '展开菜单' : '收起菜单'" @click="toggleSidebar"><ChevronRight :size="16"/></button>
+      </div>
     </aside>
 
     <main>

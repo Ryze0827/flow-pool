@@ -1,9 +1,10 @@
 <script setup>
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowUpCircle, ArrowUpToLine, CircleAlert, CircleCheck, Info, LoaderCircle, RefreshCw, X } from 'lucide-vue-next'
 import { api } from './api'
 import { createUpgradePolling } from './upgradePolling'
 import { loadUpgradeStatus } from './upgradeStatus'
+import { version } from '../package.json'
 
 const props = defineProps({ busy: Boolean })
 const dialog = ref(null)
@@ -21,6 +22,8 @@ const timeText = value => {
 }
 const field = value => loaded.value ? (value || '—') : '…'
 const active = computed(() => submitting.value || state.value.running)
+const updateAvailable = computed(() => Boolean(state.value.repo.update_available))
+const entryTitle = computed(() => `FlowPool v${version} · ${active.value ? '查看升级进度' : updateAvailable.value ? '发现新版本，点击升级' : '检查更新'}`)
 const labels = { success: '升级完成', unchanged: '已是最新', failed: '升级失败', rolled_back: '已回退', recovery_failed: '需要处理', interrupted: '任务中断', running: '升级中' }
 const jobLabel = computed(() => labels[state.value.job?.status] || '等待升级')
 const latestStep = computed(() => {
@@ -54,7 +57,7 @@ watch(upgradeDone, done => {
 })
 let mounted = true, fetching = false
 let requestController
-const polling = createUpgradePolling(() => refresh(false), () => state.value.running)
+const polling = createUpgradePolling(() => refresh(!state.value.running), () => state.value.running)
 
 async function refresh(checkRemote = false) {
   if (fetching) return
@@ -107,6 +110,7 @@ async function start() {
   } catch (failure) { error.value = failure.message }
   finally { submitting.value = false }
 }
+onMounted(() => refresh(true))
 onUnmounted(() => {
   mounted = false
   polling.stop()
@@ -115,7 +119,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <button class="nav-item upgrade-entry" :title="active ? '查看升级进度' : '升级 FlowPool'" aria-label="升级 FlowPool" @click="open"><LoaderCircle v-if="active" :size="18" class="spinning"/><ArrowUpToLine v-else :size="18"/><span>{{ active ? '升级中' : '一键升级' }}</span></button>
+  <button :class="['upgrade-entry', { 'has-update': updateAvailable }]" :title="entryTitle" :aria-label="entryTitle" @click="open"><span>v{{ version }}</span><LoaderCircle v-if="active" :size="11" class="spinning" aria-hidden="true"/><span v-else-if="updateAvailable" class="upgrade-dot" aria-hidden="true"></span></button>
   <dialog ref="dialog" class="modal import-settings-dialog upgrade-dialog" aria-labelledby="upgrade-title" @click.self="dialog.close()">
     <div class="modal-heading"><div><h2 id="upgrade-title">升级 FlowPool</h2><p>拉取远程代码，构建后自动部署</p></div><button class="icon-button" aria-label="关闭升级窗口" @click="dialog.close()"><X :size="20"/></button></div>
     <div class="modal-body upgrade-body">
@@ -123,7 +127,7 @@ onUnmounted(() => {
         <component :is="statusView.icon" :size="20" :class="{ spinning: statusView.spin }"/>
         <div><strong>{{ statusView.title }}</strong><p v-if="statusView.detail">{{ statusView.detail }}</p></div>
       </div>
-      <div v-if="!loading || active" class="upgrade-version"><div><small>当前版本</small><strong>{{ field(state.repo.commit?.slice(0, 8)) }}</strong></div><div><small>目标版本</small><strong>{{ field((state.repo.latest_commit || state.job?.new_commit)?.slice(0, 8)) }}</strong></div></div>
+      <div v-if="!loading || active" class="upgrade-version"><div><small>当前版本</small><strong>v{{ version }}</strong><small v-if="state.repo.commit">提交 {{ state.repo.commit.slice(0, 8) }}</small></div><div><small>目标提交</small><strong>{{ field((state.repo.latest_commit || state.job?.new_commit)?.slice(0, 8)) }}</strong></div></div>
       <p v-if="!loading || active" class="small muted upgrade-hint">自动安装依赖、构建并重启；升级期间请勿进行其它写入操作。</p>
       <p v-if="busy && !active && !loading" class="notice compact">页面正在执行其他操作，完成后即可开始升级。</p>
       <div v-if="state.job && (!loading || active)" class="upgrade-progress">
