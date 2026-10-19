@@ -17,7 +17,12 @@ const groupSearch = ref('')
 const chosenGroupIds = computed(() => draftRules.value?.group_ids ?? defaultGroupIds.value)
 const matchingGroups = computed(() => groups.value.filter(group => `${group.name} ${group.id} ${group.platform}`.toLowerCase().includes(groupSearch.value.trim().toLowerCase())))
 const missingGroupIds = computed(() => chosenGroupIds.value.filter(id => !groups.value.some(group => group.id === id)))
-const savedGroupNames = computed(() => (rules.value?.group_ids ?? defaultGroupIds.value).map(id => groups.value.find(group => group.id === id)?.name || `#${id}（不可用）`).join('、'))
+const savedGroupNames = computed(() => (rules.value?.group_ids ?? defaultGroupIds.value).map(id => {
+  const group = groups.value.find(item => item.id === id)
+  if (!group) return `#${id}（不可用）`
+  const rate = group.rate_multiplier
+  return rate === undefined ? group.name : `${group.name}（默认倍率 ${rate === null ? '—' : format(rate)}×）`
+}).join('、'))
 const rulesDirty = computed(() => JSON.stringify(draftRules.value) !== JSON.stringify(rules.value))
 const lowestMinimum = computed(() => rules.value?.tiers.length ? Math.min(...rules.value.tiers.map(tier => tier.minimum)) : null)
 const sortedSavedTiers = computed(() => [...(rules.value?.tiers ?? [])].sort((a, b) => a.minimum - b.minimum))
