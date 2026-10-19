@@ -122,6 +122,7 @@ async function adjustRates() {
     })
     result.value = null
     selected.value = []
+    await loadGroups()
     emit('notify', '已调整 ' + adjustmentResult.value.succeeded + ' 个 GPT 分组')
   } catch (cause) { adjustmentError.value = cause.message }
   finally { adjustmentBusy.value = false }

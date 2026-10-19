@@ -17,7 +17,7 @@ from .sub2api import Sub2API, UpstreamError
 
 GROUP_NAMES = {'Pro号池', 'Pro号池 (强制开启Fast)'}
 SNAPSHOT_TTL = 30 * 60
-GROUPS_SQL = "SELECT id, name, platform FROM groups WHERE deleted_at IS NULL AND status='active' AND platform='openai' ORDER BY id"
+GROUPS_SQL = "SELECT id, name, platform, rate_multiplier FROM groups WHERE deleted_at IS NULL AND status='active' AND platform='openai' ORDER BY id"
 
 # Positive balance recharges and all admin balance adjustments are included.
 # Balance-order refunds that are requested or completed are deducted from that amount.
