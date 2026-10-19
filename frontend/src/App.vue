@@ -108,7 +108,11 @@ async function showOverloads(pool) {
 async function overloadAction(item, operation) {
   await action(async () => {
     await api(`/accounts/${item.account_id}/${operation}`, 'POST')
-    notify(operation === 'pause' ? '已停止调度，需手动恢复' : '已强制进入冷却，到期自动恢复')
+    notify({
+      pause: '已停止调度，需手动恢复',
+      cooldown: '已强制进入冷却，到期自动恢复',
+      resume: '已开启调度'
+    }[operation])
     await refresh()
     if (overloadPool.value) await showOverloads(overloadPool.value)
   })
@@ -713,9 +717,8 @@ onUnmounted(() => {
                     <div v-for="account in usageActiveAccounts[pool.id]" :key="account.id" class="usage-active-account">
                       <div class="usage-active-account-heading">
                         <strong :title="`${account.name} · #${account.id}`">{{ account.name }}</strong>
-                        <button class="usage-account-action" type="button" :disabled="busy" :title="isGuarded(account) ? '快速冷却，到期自动恢复' : '停止调度，需手动恢复'" :aria-label="`${isGuarded(account) ? '快速冷却' : '停止调度'}账号 ${account.name}（#${account.id}）`" @click="accountAction(account, isGuarded(account) ? 'cooldown' : 'pause')">
-                          <Clock3 v-if="isGuarded(account)" :size="13"/><Pause v-else :size="13"/>{{ isGuarded(account) ? '冷却' : '停调' }}
-                        </button>
+                        <button class="usage-account-action" type="button" :disabled="busy" title="停止调度，需手动恢复" :aria-label="`停止调度账号 ${account.name}（#${account.id}）`" @click="accountAction(account, 'pause')"><Pause :size="13"/>停调</button>
+                        <button v-if="isGuarded(account)" class="usage-account-action" type="button" :disabled="busy" title="快速冷却，到期自动恢复" :aria-label="`快速冷却账号 ${account.name}（#${account.id}）`" @click="accountAction(account, 'cooldown')"><Clock3 :size="13"/>冷却</button>
                       </div>
                       <AccountQuota :account="account" :now="now" compact/>
                     </div>
@@ -739,7 +742,7 @@ onUnmounted(() => {
           <p class="small muted">停止调度后需手动恢复。强制冷却跳过阈值和替补检查，持续 {{ settings.rule.cooldown_seconds / 60 }} 分钟后自动恢复；三方组冷却期间仅保留生图调度。</p>
           <p v-if="overloadError" class="notice error" role="alert">{{ overloadError }}</p>
           <p v-if="overloadLoading" class="quiet-empty" role="status">正在读取过载账号…</p>
-          <div v-else-if="overloadItems.length" class="table-scroll"><table><thead><tr><th>账号</th><th>过载次数 / 最近时间</th><th>调度状态</th><th>操作</th></tr></thead><tbody><tr v-for="item in overloadItems" :key="item.account_id"><td>{{ item.name }}<small class="muted">#{{ item.account_id }}</small></td><td>{{ item.count }} 次<small class="muted">{{ usageTimeText(item.last_at) }}</small></td><td>{{ statuses[item.state] || item.state }}</td><td><div class="inline"><button class="button" :disabled="busy" @click="overloadAction(item, 'pause')"><Pause :size="14"/>停止调度</button><button class="button" :disabled="busy" @click="overloadAction(item, 'cooldown')"><Clock3 :size="14"/>强制冷却</button></div></td></tr></tbody></table></div>
+          <div v-else-if="overloadItems.length" class="table-scroll"><table><thead><tr><th>账号</th><th>过载次数 / 最近时间</th><th>调度状态</th><th>操作</th></tr></thead><tbody><tr v-for="item in overloadItems" :key="item.account_id"><td>{{ item.name }}<small class="muted">#{{ item.account_id }}</small></td><td>{{ item.count }} 次<small class="muted">{{ usageTimeText(item.last_at) }}</small></td><td>{{ statuses[item.state] || item.state }}</td><td><div class="inline"><button class="button" :disabled="busy" @click="overloadAction(item, 'resume')"><Play :size="14"/>开启调度</button><button class="button" :disabled="busy" @click="overloadAction(item, 'pause')"><Pause :size="14"/>停止调度</button><button class="button" :disabled="busy" @click="overloadAction(item, 'cooldown')"><Clock3 :size="14"/>强制冷却</button></div></td></tr></tbody></table></div>
           <p v-else-if="!overloadError" class="quiet-empty">最近 5 分钟没有过载账号。</p>
         </div>
       </section>
