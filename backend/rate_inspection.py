@@ -170,8 +170,14 @@ class RateInspection:
                           if group.get('platform') == 'openai' and group.get('status') == 'active' and not group.get('deleted_at')]
         groups = [group for group in groups if group.get('platform') == 'openai']
         # The group API contains internal settings; expose only selector metadata.
-        return {'items': [{'id': group['id'], 'name': group['name'], 'platform': group.get('platform', '')}
-                          for group in groups], 'default_group_ids': [group['id'] for group in default_groups(groups)]}
+        items = []
+        for group in groups:
+            item = {'id': group['id'], 'name': group['name'], 'platform': group.get('platform', '')}
+            if 'rate_multiplier' in group:
+                rate = number(group.get('rate_multiplier'))
+                item['rate_multiplier'] = float(rate) if rate is not None else None
+            items.append(item)
+        return {'items': items, 'default_group_ids': [group['id'] for group in default_groups(groups)]}
 
     async def read_api(self, user_ids, rules):
         # Compatibility mode: use the server's lifetime aggregate, never infer

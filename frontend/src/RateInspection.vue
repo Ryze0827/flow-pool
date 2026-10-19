@@ -227,7 +227,7 @@ onUnmounted(() => controller?.abort())
           <p v-if="groupsLoading" class="small muted" role="status">正在读取分组…</p>
           <p v-if="groupsError" class="notice error" role="alert">{{ groupsError }}</p>
           <div class="group-options">
-            <label v-for="group in matchingGroups" :key="group.id" class="group-option"><input type="checkbox" :checked="chosenGroupIds.includes(group.id)" :disabled="!chosenGroupIds.includes(group.id) && chosenGroupIds.length >= 200" @change="toggleGroup(group.id, $event.target.checked)"/><span>{{ group.name }}<small>#{{ group.id }}<template v-if="group.platform"> · {{ group.platform }}</template></small></span></label>
+            <label v-for="group in matchingGroups" :key="group.id" class="group-option"><input type="checkbox" :checked="chosenGroupIds.includes(group.id)" :disabled="!chosenGroupIds.includes(group.id) && chosenGroupIds.length >= 200" @change="toggleGroup(group.id, $event.target.checked)"/><span>{{ group.name }}<small>#{{ group.id }}<template v-if="group.platform"> · {{ group.platform }}</template><template v-if="group.rate_multiplier !== undefined"> · 默认倍率 <template v-if="group.rate_multiplier === null">—</template><template v-else>{{ format(group.rate_multiplier) }}×</template></template></small></span></label>
           </div>
           <p v-if="!groupsLoading && !groupsError && !matchingGroups.length" class="small muted">{{ groups.length ? '没有匹配的分组。' : '没有可用分组，请先在 Sub2API 中创建或启用分组。' }}</p>
           <p v-for="id in missingGroupIds" :key="id" class="notice error">分组 #{{ id }} 已停用、不存在或非 GPT 分组。<button type="button" class="text-button" @click="toggleGroup(id, false)">移除选择</button></p>
