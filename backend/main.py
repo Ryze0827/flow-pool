@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .importer import Importer, normalize, public_batch, recovery_from_note, recovery_material
 from .batch_health import inspect_item
 from .login import AccountLogin
-from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, WelfareGroupRateRequest, WelfareGroupCopyRequest, WelfareSchedule, CheckInSettings, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
+from .models import account_guarded, GuardUpdate, PriorityUpdate, ConcurrencyUpdate, PoolSchedulingRequest, Pool, AdminLogin, AdminLogin2FA, RateCorrectionRequest, RateAdjustmentRequest, GroupOpenAIFastRequest, WelfareGroupStatusRequest, WelfareGroupRateRequest, WelfareGroupCopyRequest, WelfareSchedule, CheckInSettings, RateRules, PostgresSettingsUpdate, Enroll, ImportOptions, LoginImport, MailSettings, Preview, ReloginImport, SavedRelogin, Settings
 from .mailer import Mailer, MailError, validate_mail
 from .scheduler import Scheduler
 from .store import Store
@@ -314,6 +314,11 @@ async def inspect_rates(request: Request):
 @app.post('/api/rate-inspection/correct')
 async def correct_rates(value: RateCorrectionRequest, request: Request):
     return await rate_inspection.correct(value.inspection_id, value.row_ids, request.state.admin['id'])
+
+
+@app.post('/api/rate-inspection/adjust')
+async def adjust_rates(value: RateAdjustmentRequest, request: Request):
+    return await rate_inspection.adjust(value, request.state.admin['id'])
 
 
 @app.get('/api/group-control/groups')

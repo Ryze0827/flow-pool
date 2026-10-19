@@ -1,4 +1,4 @@
-"""Shared Sub2API PostgreSQL access: encrypted settings and read-only snapshots."""
+"""Shared Sub2API PostgreSQL access: encrypted settings and verified snapshots/writes."""
 import asyncio
 import hmac
 import os
@@ -100,6 +100,33 @@ class Sub2Postgres:
         except psycopg.Error:
             # Never expose libpq diagnostics, connection strings or SQL parameters.
             raise HTTPException(502, 'PostgreSQL 查询失败或超时，请检查连接、只读权限及 Sub2API 数据库版本') from None
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Open a verified primary transaction for small administrative writes."""
+        value = self.config
+        if not self.dsn and (not value.username or not value.host or not value.database):
+            raise HTTPException(503, '请先在连接设置中配置 Sub2API PostgreSQL')
+        if not self.settings.admin_key or not self.settings.base_url:
+            raise HTTPException(400, '请先保存 Sub2API 地址和管理员 API Key，用于核对数据库所属后端')
+        kwargs = {} if self.dsn else dict(host=value.host, port=value.port, dbname=value.database,
+                                         user=value.username, password=value.password, sslmode=value.sslmode)
+        try:
+            async with await psycopg.AsyncConnection.connect(
+                    self.dsn, **kwargs, connect_timeout=value.connect_timeout, row_factory=dict_row,
+                    autocommit=False, options=f'-c statement_timeout={value.statement_timeout * 1000}') as conn:
+                async with conn.transaction():
+                    async with conn.cursor() as cursor:
+                        await cursor.execute("SELECT value FROM settings WHERE key = 'admin_api_key'")
+                        key = await cursor.fetchone()
+                        if not key or not isinstance(key['value'], str) or not hmac.compare_digest(key['value'].encode(), self.settings.admin_key.encode()):
+                            raise HTTPException(409, '数据库与配置的 Sub2API 管理员 Key 不匹配，请检查是否为同一后端')
+                        await cursor.execute('SELECT pg_is_in_recovery() AS is_replica')
+                        if (await cursor.fetchone())['is_replica']:
+                            raise HTTPException(409, '请连接 Sub2API PostgreSQL 主库，以便写入倍率配置')
+                        yield cursor
+        except psycopg.Error:
+            raise HTTPException(502, 'PostgreSQL 写入失败或超时，请检查连接、主库状态及数据库版本') from None
 
     async def test(self):
         async with self.snapshot() as cursor:

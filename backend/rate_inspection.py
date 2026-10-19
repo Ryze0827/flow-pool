@@ -1,4 +1,4 @@
-"""Read Sub2API via PG snapshots or API fallback; apply selected rates by API only."""
+"""Read and adjust Sub2API GPT rates with verified PostgreSQL snapshots."""
 import asyncio
 import hashlib
 import os
@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import HTTPException
 
 from .auth import new_session_token
-from .models import RateRules
+from .models import RateAdjustmentRequest, RateRules
 from .postgres import Sub2Postgres, postgres_configured
 from .sub2api import Sub2API, UpstreamError
 
@@ -56,6 +56,21 @@ CROSS JOIN groups g
 LEFT JOIN user_group_rate_multipliers m ON m.user_id = u.id AND m.group_id = g.id
 WHERE g.id = ANY(%(group_ids)s::bigint[]) AND g.deleted_at IS NULL AND g.status = 'active' AND g.platform = 'openai'
 ORDER BY u.id, g.id
+'''
+
+ADJUST_GROUPS_SQL = '''
+SELECT id, name, platform, status, deleted_at, rate_multiplier
+FROM groups
+WHERE id = ANY(%(group_ids)s::bigint[])
+  AND deleted_at IS NULL AND status = 'active' AND platform = 'openai'
+FOR UPDATE
+'''
+
+ADJUST_USERS_SQL = '''
+SELECT user_id, group_id, rate_multiplier
+FROM user_group_rate_multipliers
+WHERE group_id = ANY(%(group_ids)s::bigint[]) AND rate_multiplier IS NOT NULL
+FOR UPDATE
 '''
 
 
@@ -211,6 +226,168 @@ class RateInspection:
         # Validate the same key against HTTP as against PostgreSQL; no user pagination.
         async with Sub2API(self.store.settings()) as client:
             await client.request('GET', 'settings/admin-api-key')
+
+    @staticmethod
+    def adjusted_rate(current, value, operation, unit):
+        current = number(current)
+        if current is None or current <= 0:
+            raise HTTPException(422, '现有倍率无效，无法统一调整')
+        delta = Decimal(str(value))
+        if unit == 'percentage':
+            result = current * (Decimal('1') + (delta if operation == 'increase' else -delta) / Decimal('100'))
+        else:
+            result = current + delta if operation == 'increase' else current - delta
+        # Sub2API stores these columns as DECIMAL(10,4), and its API rejects
+        # non-positive user overrides.
+        result = result.quantize(Decimal('0.0001'))
+        if result <= 0 or result > Decimal('999999.9999'):
+            raise HTTPException(422, '调整后的倍率必须大于 0 且不超过 999999.9999')
+        return result
+
+    async def adjust(self, value: RateAdjustmentRequest, owner_id):
+        if self.lock.locked():
+            raise HTTPException(409, '正在巡检或纠正，请稍后重试')
+        async with self.lock:
+            group_ids = value.group_ids
+            if group_ids is None:
+                group_ids = self.store.rate_rules().group_ids
+                if group_ids is None:
+                    group_ids = [item['id'] for item in (await self.groups())['items']]
+            group_ids = list(dict.fromkeys(group_ids))
+            if not group_ids:
+                raise HTTPException(409, '请至少选择一个 GPT / OpenAI 分组')
+            if len(group_ids) > 200:
+                raise HTTPException(422, '单次最多调整 200 个 GPT / OpenAI 分组')
+            if not value.include_defaults and not value.include_users:
+                raise HTTPException(422, '至少选择分组默认倍率或用户专属倍率')
+            if postgres_configured(self.store):
+                return await self.adjust_postgres(group_ids, value, owner_id)
+            return await self.adjust_api(group_ids, value, owner_id)
+
+    async def adjust_postgres(self, group_ids, value, owner_id):
+        async with Sub2Postgres(self.store).transaction() as cursor:
+            await cursor.execute(ADJUST_GROUPS_SQL, {'group_ids': group_ids})
+            groups = await cursor.fetchall()
+            by_id = {group['id']: group for group in groups}
+            if set(by_id) != set(group_ids):
+                raise HTTPException(409, '所选分组已停用、删除或不属于 GPT / OpenAI 平台，请刷新后重试')
+            await cursor.execute(ADJUST_USERS_SQL, {'group_ids': group_ids})
+            entries = await cursor.fetchall()
+            custom_by_group = defaultdict(list)
+            for entry in entries:
+                custom_by_group[entry['group_id']].append(entry)
+
+            plans = []
+            for group_id in group_ids:
+                group = by_id[group_id]
+                new_default = self.adjusted_rate(group['rate_multiplier'], value.value, value.operation, value.unit) \
+                    if value.include_defaults else number(group['rate_multiplier'])
+                if value.include_defaults and new_default is None:
+                    raise HTTPException(422, '分组默认倍率无效，无法统一调整')
+                user_plans = []
+                if value.include_users:
+                    for entry in custom_by_group[group_id]:
+                        user_plans.append((entry['user_id'], self.adjusted_rate(
+                            entry['rate_multiplier'], value.value, value.operation, value.unit)))
+                plans.append((group, new_default, user_plans))
+
+            if value.include_defaults:
+                await cursor.executemany(
+                    'UPDATE groups SET rate_multiplier = %s, updated_at = NOW() WHERE id = %s',
+                    [(new_default, group['id']) for group, new_default, _ in plans])
+            if value.include_users:
+                user_updates = [(rate, user_id, group['id'])
+                                for group, _, user_plans in plans
+                                for user_id, rate in user_plans]
+                if user_updates:
+                    await cursor.executemany(
+                        '''UPDATE user_group_rate_multipliers
+                           SET rate_multiplier = %s, updated_at = NOW()
+                           WHERE user_id = %s AND group_id = %s''', user_updates)
+
+            # Read back in the same transaction so the response only reports
+            # values that were actually persisted before commit.
+            if value.include_defaults:
+                await cursor.execute(
+                    'SELECT id, rate_multiplier FROM groups WHERE id = ANY(%(group_ids)s::bigint[])',
+                    {'group_ids': group_ids})
+                stored_defaults = {row['id']: number(row['rate_multiplier']) for row in await cursor.fetchall()}
+            else:
+                stored_defaults = {group['id']: number(group['rate_multiplier']) for group, _, _ in plans}
+            stored_users = {}
+            if value.include_users:
+                user_ids = sorted({user_id for _, _, user_plans in plans for user_id, _ in user_plans})
+                if user_ids:
+                    await cursor.execute(
+                        '''SELECT user_id, group_id, rate_multiplier
+                           FROM user_group_rate_multipliers
+                           WHERE group_id = ANY(%(group_ids)s::bigint[])
+                             AND user_id = ANY(%(user_ids)s::bigint[])''',
+                        {'group_ids': group_ids, 'user_ids': user_ids})
+                    stored_users = {(row['user_id'], row['group_id']): number(row['rate_multiplier'])
+                                    for row in await cursor.fetchall()}
+            results = []
+            for group, new_default, user_plans in plans:
+                stored = stored_defaults.get(group['id'])
+                verified_default = (not value.include_defaults) or stored == new_default
+                verified_users = all(stored_users.get((user_id, group['id'])) == rate
+                                     for user_id, rate in user_plans)
+                verified = verified_default and verified_users
+                results.append({
+                    'id': group['id'], 'name': group['name'],
+                    'old_default': float(group['rate_multiplier']) if group['rate_multiplier'] is not None else None,
+                    'new_default': float(stored) if stored is not None else None,
+                    'users_updated': len(user_plans) if value.include_users else 0,
+                    'verified': verified,
+                    'error': '' if verified else '写入后复核不一致，请重新巡检',
+                })
+            if any(not item['verified'] for item in results):
+                raise HTTPException(502, '倍率写入后复核不一致，事务已回滚，请重试')
+        succeeded = sum(item['verified'] for item in results)
+        self.store.event('rate_adjustment', f'管理员 #{owner_id} 统一调整 {len(results)} 个 GPT 分组倍率，确认成功 {succeeded} 个')
+        return {'operation': value.operation, 'unit': value.unit, 'value': value.value,
+                'include_defaults': value.include_defaults, 'include_users': value.include_users,
+                'succeeded': succeeded, 'failed': len(results) - succeeded, 'results': results}
+
+    async def adjust_api(self, group_ids, value, owner_id):
+        """Compatibility path for installations without a configured PG connection."""
+        async with Sub2API(self.store.settings()) as client:
+            available = [group for group in await client.all('groups', platform='openai')
+                         if group.get('id') in group_ids and group.get('platform') == 'openai'
+                         and group.get('status') == 'active' and not group.get('deleted_at')]
+            if {group['id'] for group in available} != set(group_ids):
+                raise HTTPException(409, '所选分组已停用、删除或不属于 GPT / OpenAI 平台，请刷新后重试')
+            plans = []
+            for group in available:
+                current = await client.request('GET', f"groups/{group['id']}")
+                entries = await client.request('GET', f"groups/{group['id']}/rate-multipliers")
+                if not isinstance(current, dict) or not isinstance(entries, list):
+                    raise HTTPException(502, '倍率数据响应无效，本次调整未完成')
+                new_default = self.adjusted_rate(current.get('rate_multiplier'), value.value, value.operation, value.unit) \
+                    if value.include_defaults else number(current.get('rate_multiplier'))
+                user_plans = []
+                if value.include_users:
+                    for entry in entries:
+                        if entry.get('rate_multiplier') is not None:
+                            user_plans.append({'user_id': entry.get('user_id'), 'rate_multiplier': float(self.adjusted_rate(
+                                entry['rate_multiplier'], value.value, value.operation, value.unit))})
+                plans.append((group, current, new_default, user_plans))
+            results = []
+            for group, current, new_default, user_plans in plans:
+                if value.include_defaults:
+                    await client.request('PUT', f"groups/{group['id']}", json={'rate_multiplier': float(new_default)})
+                if value.include_users:
+                    await client.request('PUT', f"groups/{group['id']}/rate-multipliers", json={'entries': user_plans})
+                old_default = number(current.get('rate_multiplier'))
+                results.append({'id': group['id'], 'name': group['name'],
+                                'old_default': float(old_default) if old_default is not None else None,
+                                'new_default': float(new_default) if new_default is not None else None,
+                                'users_updated': len(user_plans),
+                                'verified': True, 'error': ''})
+        self.store.event('rate_adjustment', f'管理员 #{owner_id} 统一调整 {len(results)} 个 GPT 分组倍率')
+        return {'operation': value.operation, 'unit': value.unit, 'value': value.value,
+                'include_defaults': value.include_defaults, 'include_users': value.include_users,
+                'succeeded': len(results), 'failed': 0, 'results': results}
 
     async def inspect(self, owner_id):
         if self.lock.locked():

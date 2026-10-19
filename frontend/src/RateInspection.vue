@@ -43,7 +43,7 @@ function toggleGroup(id, checked) {
   draftRules.value.group_ids = (checked ? [...ids, id] : ids).sort((a, b) => a - b)
 }
 async function saveRules() {
-  if (savingRules.value || busy.value || correcting.value || groupsLoading.value || groupsError.value || !chosenGroupIds.value.length || missingGroupIds.value.length) return
+  if (savingRules.value || adjustmentBusy.value || busy.value || correcting.value || groupsLoading.value || groupsError.value || !chosenGroupIds.value.length || missingGroupIds.value.length) return
   savingRules.value = true; rulesError.value = ''
   try {
     rules.value = await api('/rate-inspection/rules', 'PUT', { ...draftRules.value, group_ids: chosenGroupIds.value })
@@ -67,6 +67,12 @@ const busy = ref(false)
 const correcting = ref(false)
 const error = ref('')
 const correction = ref(null)
+const adjustmentBusy = ref(false)
+const adjustmentError = ref('')
+const adjustmentResult = ref(null)
+const adjustmentOperation = ref('increase')
+const adjustmentUnit = ref('percentage')
+const adjustmentValue = ref('')
 const confirmation = ref(null)
 const page = ref(1)
 let controller = null
@@ -78,7 +84,7 @@ const selectedRows = computed(() => rows.value.filter(row => selected.value.incl
 const format = value => value === null ? '—' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 8 }).format(value)
 
 async function inspect() {
-  if (busy.value || correcting.value || savingRules.value || groupsLoading.value || groupsError.value || rulesDirty.value || !rules.value || !chosenGroupIds.value.length || missingGroupIds.value.length) return
+  if (busy.value || adjustmentBusy.value || correcting.value || savingRules.value || groupsLoading.value || groupsError.value || rulesDirty.value || !rules.value || !chosenGroupIds.value.length || missingGroupIds.value.length) return
   busy.value = true
   error.value = ''
   result.value = null
@@ -98,8 +104,30 @@ function cancel() {
   error.value = '巡检已取消，请重新开始以获取完整结果。'
 }
 function selectAll(event) { selected.value = event.target.checked ? rows.value.map(row => row.id) : [] }
+async function adjustRates() {
+  const amount = Number(adjustmentValue.value)
+  if (adjustmentBusy.value || busy.value || correcting.value || savingRules.value || rulesDirty.value ||
+      !Number.isFinite(amount) || amount <= 0 || !chosenGroupIds.value.length || missingGroupIds.value.length) return
+  adjustmentBusy.value = true
+  adjustmentError.value = ''
+  adjustmentResult.value = null
+  try {
+    adjustmentResult.value = await api('/rate-inspection/adjust', 'POST', {
+      group_ids: chosenGroupIds.value,
+      operation: adjustmentOperation.value,
+      unit: adjustmentUnit.value,
+      value: amount,
+      include_defaults: true,
+      include_users: true,
+    })
+    result.value = null
+    selected.value = []
+    emit('notify', '已调整 ' + adjustmentResult.value.succeeded + ' 个 GPT 分组')
+  } catch (cause) { adjustmentError.value = cause.message }
+  finally { adjustmentBusy.value = false }
+}
 async function correct() {
-  if (correcting.value || savingRules.value || rulesDirty.value || !selected.value.length) return
+  if (correcting.value || adjustmentBusy.value || savingRules.value || rulesDirty.value || !selected.value.length) return
   confirmation.value.close()
   correcting.value = true
   error.value = ''
@@ -133,6 +161,33 @@ onUnmounted(() => controller?.abort())
         <p class="small muted">未满 {{ format(lowestMinimum) }} 美元不调整倍率 · 适用分组：{{ savedGroupNames || '未选择' }}</p>
       </div>
       <p v-if="rulesDirty" class="notice">档位或分组有未保存修改，请打开「编辑规则」保存或撤销后再巡检和纠正。</p>
+    </section>
+    <section class="panel form-panel">
+      <div class="card-title"><div><h2>GPT 分组倍率统一调整</h2><p>对当前巡检分组的默认倍率和所有用户专属倍率同时上调或下调。</p></div></div>
+      <form class="adjustment-form" @submit.prevent="adjustRates">
+        <label>方向
+          <select v-model="adjustmentOperation" :disabled="adjustmentBusy || busy || correcting || savingRules || rulesDirty">
+            <option value="increase">上调</option><option value="decrease">下调</option>
+          </select>
+        </label>
+        <label>方式
+          <select v-model="adjustmentUnit" :disabled="adjustmentBusy || busy || correcting || savingRules || rulesDirty">
+            <option value="percentage">百分比</option><option value="absolute">固定数字</option>
+          </select>
+        </label>
+        <label>{{ adjustmentUnit === 'percentage' ? '幅度（%）' : '幅度（倍率）' }}
+          <input v-model="adjustmentValue" type="number" min="0.0001" step="any" required :disabled="adjustmentBusy || busy || correcting || savingRules || rulesDirty" />
+        </label>
+        <button class="button primary" type="submit" :disabled="adjustmentBusy || busy || correcting || savingRules || groupsLoading || !!groupsError || rulesDirty || !rules || !chosenGroupIds.length || !!missingGroupIds.length || !Number.isFinite(Number(adjustmentValue)) || Number(adjustmentValue) <= 0">
+          {{ adjustmentBusy ? '正在调整…' : '统一调整' }}
+        </button>
+      </form>
+      <p class="small muted">适用分组：{{ savedGroupNames || '未选择' }} · 会同时更新分组默认倍率及用户专属倍率，调整后请重新巡检。</p>
+      <p v-if="adjustmentError" class="notice error" role="alert">{{ adjustmentError }}</p>
+      <div v-if="adjustmentResult" class="notice" role="status">
+        已完成 {{ adjustmentResult.succeeded }} 个分组，失败 {{ adjustmentResult.failed }} 个。
+        <span v-for="item in adjustmentResult.results.filter(item => item.error)" :key="item.id"> {{ item.name }}：{{ item.error }}</span>
+      </div>
     </section>
     <section class="panel form-panel">
       <div class="card-title"><div><h2>用户倍率巡检</h2><p>每次巡检都会检查所有未删除用户。</p></div></div>
@@ -217,6 +272,9 @@ onUnmounted(() => controller?.abort())
 .group-option span { min-width: 0; overflow-wrap: anywhere; }
 .group-option small { display: block; color: var(--muted); margin-top: 3px; }
 .tier-editor { display: grid; gap: 12px; margin-top: 20px; }
+.adjustment-form { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)) auto; align-items: end; gap: 12px; margin-top: 16px; }
+.adjustment-form label { margin: 0; }
+.adjustment-form button { white-space: nowrap; }
 .tier-row { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 16px; }
 .tier-row label { margin: 0; }
 .rate-summary { display: flex; gap: 24px; flex-wrap: wrap; margin: 20px 0 12px; }
@@ -237,7 +295,7 @@ onUnmounted(() => controller?.abort())
 .tier-ladder strong { font-size: 18px; }
 
 .rate-confirm-list { max-height: 45vh; overflow: auto; }
-@media (max-width: 680px) { .tier-row { grid-template-columns: 1fr; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); } }
+@media (max-width: 680px) { .adjustment-form { grid-template-columns: 1fr 1fr; } .adjustment-form label:last-of-type { grid-column: 1 / -1; } .adjustment-form button { grid-column: 1 / -1; } .tier-row { grid-template-columns: 1fr; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); } }
 @media (max-width: 600px) {
   .rate-rules-dialog { width: calc(100vw - 24px); padding: 18px; }
   .rate-rules-dialog .group-picker { max-height: none; overflow: visible; padding: 12px; }

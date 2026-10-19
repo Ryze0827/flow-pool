@@ -294,6 +294,47 @@ class RateCorrectionRequest(BaseModel):
     row_ids: list[str] = Field(min_length=1, max_length=10000)
 
 
+class RateAdjustmentRequest(BaseModel):
+    """Uniformly adjust GPT group defaults and user-specific multipliers."""
+    group_ids: list[Annotated[int, Field(strict=True, ge=1, le=9223372036854775807)]] | None = Field(
+        None, min_length=1, max_length=200
+    )
+    operation: Literal['increase', 'decrease', 'add', 'subtract'] = 'increase'
+    unit: Literal['absolute', 'percentage', 'number', 'percent'] = 'absolute'
+    value: float = Field(gt=0, le=1000000000)
+    include_defaults: StrictBool = True
+    include_users: StrictBool = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def accept_adjustment_aliases(cls, values):
+        if not isinstance(values, dict):
+            return values
+        values = dict(values)
+        # Keep the public contract readable while accepting common client names.
+        for source, target in (('direction', 'operation'), ('adjustment_type', 'unit'),
+                               ('amount', 'value'), ('adjustment', 'value')):
+            if target not in values and source in values:
+                values[target] = values[source]
+        if 'operation' in values:
+            values['operation'] = {'up': 'increase', 'down': 'decrease',
+                                   'plus': 'increase', 'minus': 'decrease'}.get(values['operation'], values['operation'])
+        if 'unit' in values:
+            values['unit'] = {'fixed': 'absolute', 'fixed_number': 'absolute',
+                              'percent': 'percentage'}.get(values['unit'], values['unit'])
+        return values
+
+    @field_validator('operation')
+    @classmethod
+    def normalize_operation(cls, value):
+        return {'add': 'increase', 'subtract': 'decrease'}.get(value, value)
+
+    @field_validator('unit')
+    @classmethod
+    def normalize_unit(cls, value):
+        return {'number': 'absolute', 'percent': 'percentage'}.get(value, value)
+
+
 class GroupOpenAIFastRequest(BaseModel):
     group_ids: list[Annotated[int, Field(strict=True, ge=1, le=9223372036854775807)]] = Field(min_length=1, max_length=200)
     enabled: StrictBool
