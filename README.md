@@ -26,9 +26,11 @@ EOF
 chmod 600 .env
 ```
 
-管理员使用与 erxinai 一致的 **Sub2API 邮箱和密码**登录，支持 Turnstile 和 TOTP 二步验证，仅允许 `role=admin` 且 `status=active` 的账号，不提供注册入口或注册代理。登录协议迁自 erxinai 的 `src/api/auth.js`、`src/auth/LoginPage.jsx` 和 `TurnstileWidget.jsx`；令牌保存在服务端加密存储中，浏览器只持有 HttpOnly 会话 Cookie。会话最长 12 小时，期间按需刷新上游令牌，每次访问受保护 API 都向 `/auth/me` 核验管理员身份。禁用、降权、令牌吊销后不能继续访问；上游暂不可用时拒绝操作但保留会话供稍后重试。
+管理员使用与 erxinai 一致的 **Sub2API 邮箱和密码**登录，支持 Turnstile 和 TOTP 二步验证，仅允许 `role=admin` 且 `status=active` 的账号，不提供注册入口或注册代理。登录协议迁自 erxinai 的 `src/api/auth.js`、`src/auth/LoginPage.jsx` 和 `TurnstileWidget.jsx`；令牌保存在服务端加密存储中，浏览器只持有 HttpOnly 会话 Cookie。会话连续 30 天未使用后过期，身份验证成功后同步续期服务端会话和浏览器 Cookie，期间按需刷新上游令牌，每次访问受保护 API 都向 `/auth/me` 核验管理员身份。禁用、降权、令牌吊销后不能继续访问；上游暂不可用时拒绝操作但保留会话供稍后重试。升级后仍有效的旧会话在下次验证成功时自动续期；已经过期的 Cookie 需重新登录一次。
 
 `FLOWPOOL_SUB2API_URL` 是登录和管理操作的统一后端地址，示例与 erxinai 当前 `.env.local` 一致。部署同机时可改成该后端实际监听的回环地址；**不要填 erxinai 前端地址或另一套 Sub2API**。环境变量优先于本地已保存的连接地址；未设置时可沿用已保存的地址。页面不允许单独切换登录/管理后端。旧版 `FLOWPOOL_ADMIN_*` 不再生效，旧本地登录会话不再接受，无需迁移用户或密码。切换上游实例前应先处理本地托管账号及导入记录，避免混用 ID。
+
+Sub2API 在生成令牌对失败时可能降级为仅返回访问令牌，不提供刷新令牌及有效期。此时 FlowPool 持续向 `/auth/me` 核验令牌，直到上游确认失效，不按本地默认的 1 小时提前退出；没有刷新令牌时无法自动续期上游登录。`data/service.log` 会记录这类降级，以及鉴权失败的接口、HTTP 状态和已知原因码（如 `REFRESH_TOKEN_INVALID`、`SESSION_BINDING_MISMATCH`），不记录令牌或上游响应正文。临时的 `/auth/me` 拒绝会阻止本次操作并保留会话供重试；明确失效或管理员资格被撤销时仍清除会话。
 
 默认允许通过 `fp.aiwxin.com` 访问；使用其他 Nginx 域名时，将域名加入 `FLOWPOOL_ALLOWED_HOSTS`，正确传递 Host、`X-Forwarded-Proto`，对外使用 HTTPS。Uvicorn 只应信任实际反向代理的 IP（默认信任回环地址），应用按经可信代理处理后的请求协议设置 Secure Cookie，不直接信任任意客户端的转发头。启用 Turnstile 时需在同一站点配置中允许 FlowPool 域名。登录后在「连接设置 → Sub2API PostgreSQL」填写数据库主机、端口、库名、用户名、密码和 SSL 模式，并测试、保存。PG 配置加密保存在本地 SQLite，密码不回显；同一连接留空密码表示保留，也可明确勾选清除密码。改换连接目标或用户名时需重新填写密码。支持连接超时（1–30 秒）和查询超时（1–300 秒）。测试使用当前表单但不保存，核对主库、查询字段权限及与 HTTP 后端的管理员 Key 一致性。先保存上方管理员 Key，再测试 PG。
 

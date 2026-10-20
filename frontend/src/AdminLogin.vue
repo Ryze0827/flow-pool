@@ -76,7 +76,7 @@ function cancelTotp() {
         <a-button type="primary" html-type="submit" class="full-width" :loading="busy" :disabled="settingsLoading || !settings || (!totp && settings.turnstile_enabled && !turnstileToken)"><LogIn :size="16"/>{{ busy ? '正在验证…' : totp ? '验证并登录' : '登录管理后台' }}</a-button>
         <a-button v-if="totp" type="link" html-type="button" :disabled="busy" @click="cancelTotp">返回邮箱登录</a-button>
       </form>
-      <small class="auth-footnote">仅允许管理员登录，不开放注册。会话有效期最长 12 小时。</small>
+      <small class="auth-footnote">仅允许管理员登录，不开放注册。登录状态自动续期，连续 30 天未使用后过期。</small>
     </section>
   </main>
 </template>

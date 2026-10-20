@@ -1,7 +1,8 @@
 import hashlib
 import secrets
 
-SESSION_TTL_SECONDS = 12 * 60 * 60
+# Idle timeout; successful upstream validation renews both storage and cookie.
+SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 
 
 def new_session_token():
