@@ -116,9 +116,17 @@ allowed_hosts = [item.strip() for item in os.environ.get('FLOWPOOL_ALLOWED_HOSTS
 invoice_allowed_origins = [item.strip().rstrip('/') for item in os.environ.get('FLOWPOOL_INVOICE_ALLOWED_ORIGINS', 'https://aiwxin.com').split(',') if item.strip() and item.strip() != '*']
 
 
+def set_session_cookie(request, response, token):
+    response.set_cookie('flowpool_session', token, max_age=SESSION_TTL_SECONDS, httponly=True,
+                        secure=request.url.scheme == 'https', samesite='lax', path='/')
+
+
 @app.middleware('http')
 async def local_security(request: Request, call_next):
     def secured(response):
+        token = request.cookies.get('flowpool_session')
+        if getattr(request.state, 'admin', None) and upstream_auth and upstream_auth.active(token):
+            set_session_cookie(request, response, token)
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['X-Frame-Options'] = 'DENY'
@@ -221,6 +229,8 @@ async def health():
 @app.get('/api/auth/status')
 async def auth_status(request: Request):
     user = await upstream_auth.session(request.cookies.get('flowpool_session'))
+    if user:
+        request.state.admin = user
     return {'configured': bool(store.settings().base_url), 'authenticated': bool(user),
             'username': (user.get('username') or user.get('email')) if user else ''}
 
@@ -238,8 +248,7 @@ async def complete_login(value, request, response, two_factor=False):
     result, token = await upstream_auth.login(body, two_factor)
     if token:
         await upstream_auth.logout(request.cookies.get('flowpool_session'))
-        response.set_cookie('flowpool_session', token, max_age=SESSION_TTL_SECONDS, httponly=True,
-                            secure=request.url.scheme == 'https', samesite='lax', path='/')
+        set_session_cookie(request, response, token)
     return result
 
 
