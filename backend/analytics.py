@@ -223,6 +223,19 @@ class Analytics:
         return {'items': [{**row, 'name': accounts[row['account_id']]['name'],
                            'state': accounts[row['account_id']]['state']} for row in rows]}
 
+    async def overload_error_count(self, account_id):
+        """Count recent upstream overload errors for one managed account."""
+        if not postgres_configured(self.store):
+            return None
+        async with self.snapshot() as cursor:
+            await cursor.execute('''SELECT COUNT(*) AS count FROM ops_error_logs
+                WHERE account_id = %s
+                  AND created_at >= CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                  AND created_at <= CURRENT_TIMESTAMP
+                  AND error_body ILIKE %s''',
+                                 (account_id, '%Our servers are currently overloaded%'))
+            return int((await cursor.fetchone())['count'])
+
     async def ranking(self):
         ranking = {int(a['id']): {'account_id': int(a['id']), 'account_name': a['name'],
                    'pool': a['pool'], 'state': a['state'], 'share': 0, 'last_created_at': None}

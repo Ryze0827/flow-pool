@@ -228,6 +228,15 @@ class Scheduler:
             return
         if image_only:
             return
+        # Overload errors are an independent safety signal.  Apply it only to
+        # accounts covered by first-token protection, and let the normal pause
+        # flow handle replacement and recovery once the third error arrives.
+        if rule.enabled and account_guarded(account, rule) and remote.get('schedulable') is True:
+            overload_count = await Analytics(self.store, client).overload_error_count(account_id)
+            if overload_count is not None and overload_count > 2 and state in {'active', 'probation'}:
+                reason = f'最近 5 分钟过载错误 {overload_count} 次，超过 2 次，自动冷却'
+                await self.pause(client, self.store.account(account_id), rule, reason, trigger='overload')
+                return
         if observing and state == 'active':
             # 非守护号池也有推送后的健康观察，不把观察期转成新的自动冷却。
             return
@@ -444,25 +453,26 @@ class Scheduler:
         self.record_inspection(account, self.store.account(account['id'])['state'], account['sample'], account['slow_count'],
                                '提前恢复调度', reason, rule=rule, notify=False)
 
-    async def pause(self, client, account, rule, reason, manual=False):
+    async def pause(self, client, account, rule, reason, manual=False, trigger='breach'):
         if manual:
             self.store.update(account['id'], post_import_until=None)
         # 先落库意图，再调用幂等开关。进程中断时下一轮可完成未提交状态。
         self.store.update(account['id'], state='pausing', reason=reason, cooldown_replacement_id=None,
                           resume_at=None if manual else time.time() + rule.cooldown_seconds)
-        await self.finish_pause(client, self.store.account(account['id']), rule)
+        await self.finish_pause(client, self.store.account(account['id']), rule, trigger=trigger)
 
-    async def finish_pause(self, client, account, rule):
+    async def finish_pause(self, client, account, rule, trigger='breach'):
         automatic = account['resume_at'] is not None
         detail = ''
         forced = account.get('cooldown_mode') == 'forced'
+        overload = trigger == 'overload'
         if automatic and forced and account['pool'] == 'third_party':
             await client.cooldown_groups(image_only=True)
             self.store.update(account['id'], cooldown_mode='image')
             await self.finish_image_pause(client, self.store.account(account['id']), rule, migrated=True)
             return
         if automatic and not forced:
-            if not account_guarded(account, rule) or not rule.enabled or rule.alert_only or len(self.window_breaches(account, rule)) < rule.breach_count:
+            if not account_guarded(account, rule) or not rule.enabled or rule.alert_only or (not overload and len(self.window_breaches(account, rule)) < rule.breach_count):
                 state = 'active' if rule.alert_only else ('probation' if account['probation_until'] is not None else 'active')
                 reason = '仅告警模式，继续调度' if rule.alert_only else '当前窗口未满足停调条件，继续巡检'
                 self.store.update(account['id'], state=state, resume_at=None, probation_until=None if rule.alert_only else account['probation_until'], reason=reason)
@@ -480,7 +490,7 @@ class Scheduler:
                 ready_ids, replacement_id = None, None
                 detail = '已关闭冷却前替补检查，直接进入冷却'
             # 替补接口可能耗时较长，发送停调前再次确认次数没有滑出窗口。
-            if len(self.window_breaches(account, rule)) < rule.breach_count:
+            if not overload and len(self.window_breaches(account, rule)) < rule.breach_count:
                 state = 'probation' if account['probation_until'] is not None else 'active'
                 self.store.update(account['id'], state=state, resume_at=None, reason='达限次数已滑出窗口，仅告警')
                 self.record_inspection(account, state, account['sample'], account['slow_count'],
