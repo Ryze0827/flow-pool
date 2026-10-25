@@ -16,7 +16,7 @@ USAGE_COLUMNS = '''u.id, u.account_id,
     COALESCE(NULLIF(a.name, ''), '#' || u.account_id::text) AS account_name,
     u.model, u.reasoning_effort,
     COALESCE(NULLIF(g.name, ''), '#' || u.group_id::text) AS group_name,
-    u.first_token_ms, u.duration_ms, u.created_at'''
+    u.output_tokens, u.first_token_ms, u.duration_ms, u.created_at'''
 USAGE_JOINS = '''LEFT JOIN accounts a ON a.id = u.account_id AND a.deleted_at IS NULL
     LEFT JOIN groups g ON g.id = u.group_id AND g.deleted_at IS NULL'''
 
@@ -69,7 +69,7 @@ class Analytics:
                     total = int((await cursor.fetchone())['total'])
                     self.store._usage_count_cache = (identity, time.monotonic(), total)
             await cursor.execute(f'''SELECT {USAGE_COLUMNS} FROM (
-                SELECT id, account_id, group_id, model, reasoning_effort, first_token_ms, duration_ms, created_at
+                SELECT id, account_id, group_id, model, reasoning_effort, output_tokens, first_token_ms, duration_ms, created_at
                 FROM usage_logs ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s
             ) u {USAGE_JOINS} ORDER BY u.created_at DESC, u.id DESC''',
                                  (page_size, (page - 1) * page_size))
@@ -177,7 +177,7 @@ class Analytics:
                         SELECT recent.* FROM unnest(%s::bigint[]) AS managed(account_id)
                         CROSS JOIN LATERAL (
                             SELECT id, account_id, group_id, model, reasoning_effort,
-                                   first_token_ms, duration_ms, created_at
+                                   output_tokens, first_token_ms, duration_ms, created_at
                             FROM usage_logs WHERE account_id = managed.account_id
                             ORDER BY created_at DESC, id DESC LIMIT %s
                         ) recent ORDER BY recent.created_at DESC, recent.id DESC LIMIT %s

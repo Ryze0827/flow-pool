@@ -95,7 +95,6 @@ th{font-size:13px;color:#42546d;font-weight:600;background:#f0f4f9;padding-top:1
   .usage-pool-heading>div:first-of-type{width:100%;padding-bottom:6px}
   .usage-pool-heading>div:first-of-type>h3,.usage-pool-heading>.count-chip{display:none}
   .usage-pool-card.is-collapsed .usage-records-scroll,.usage-pool-card.is-collapsed .usage-pool-heading>div:first-of-type{display:none}
-  .usage-pool-card .usage-table .usage-total-duration{display:none}
   .usage-pool-card .usage-table th,.usage-pool-card .usage-table td{padding-block:7px;line-height:1.45}
   .usage-pool-card .usage-table .latency-cell{gap:0}
 }
@@ -527,7 +526,6 @@ tbody tr:hover { background: #f5faff; }
   .mobile-compact .accounts-panel .account-list .account-priority-cell,
   .mobile-compact .accounts-panel .account-list .account-concurrency-cell,
   .mobile-compact .usage-panel .column-settings-wrap,
-  .mobile-compact .usage-panel .usage-total-duration,
   .mobile-compact .invoice-tier-preview { display: none; }
   .mobile-compact .accounts-panel .account-list tr {
     grid-template-areas: 'identity identity' 'status guard' 'quota quota' 'explanation explanation' 'check check' 'actions actions';

@@ -187,6 +187,7 @@ class Sub2API:
                 'model': item.get('model'),
                 'reasoning_effort': item.get('reasoning_effort'),
                 'group_name': group.get('name') or (f"#{item['group_id']}" if item.get('group_id') else None),
+                'output_tokens': item.get('output_tokens'),
                 'first_token_ms': item.get('first_token_ms'),
                 'duration_ms': item.get('duration_ms'),
                 'created_at': item.get('created_at'),
