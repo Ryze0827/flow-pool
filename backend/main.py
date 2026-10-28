@@ -37,7 +37,7 @@ from .model_catalog import OPENAI_MODELS
 from .model_plaza import plaza_router
 from .security import RequestSecurityMiddleware
 from .advanced_groups import AdvancedGroups
-from .models import AdvancedGroupsBatch, AdvancedGroupsConfig
+from .models import AdvancedGroupsBatch, AdvancedGroupsConfig, QuotaRefundPreview
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('SCHEDULER_DATA_DIR', ROOT / 'data'))
@@ -343,6 +343,31 @@ async def group_control_openai_fast(value: GroupOpenAIFastRequest, request: Requ
 @app.get('/api/promotions/welfare-groups')
 async def promotion_welfare_groups():
     return await promotions.groups()
+
+
+@app.get('/api/promotions/quota-refunds/users')
+async def quota_refund_users(search: str = Query('', max_length=200)):
+    return await promotions.refunds.users(search.strip())
+
+
+@app.get('/api/promotions/quota-refunds')
+async def quota_refund_history():
+    return promotions.refunds.history()
+
+
+@app.post('/api/promotions/quota-refunds/preview')
+async def quota_refund_preview(value: QuotaRefundPreview, request: Request):
+    return await promotions.refunds.preview(value, request.state.admin['id'])
+
+
+@app.get('/api/promotions/quota-refunds/{batch_id}')
+async def quota_refund_detail(batch_id: str):
+    return promotions.refunds.get(batch_id)
+
+
+@app.post('/api/promotions/quota-refunds/{batch_id}/execute')
+async def quota_refund_execute(batch_id: str, request: Request):
+    return await promotions.refunds.execute(batch_id, request.state.admin['id'])
 
 
 @app.get('/api/model-plaza-user/welfare-schedule')

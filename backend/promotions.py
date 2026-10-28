@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from . import updater
 from .advanced_groups import AdvancedGroups
 from .postgres import Sub2Postgres, postgres_configured
+from .quota_refunds import QuotaRefunds
 from .sub2api import Sub2API, UpstreamError, image_only_account, public_account
 
 OPENAI_GROUPS_SQL = "SELECT id, name, status, rate_multiplier FROM groups WHERE deleted_at IS NULL AND platform='openai' ORDER BY id"
@@ -19,6 +20,7 @@ INTERVAL_SECONDS = 60
 class Promotions:
     def __init__(self, store):
         self.store = store
+        self.refunds = QuotaRefunds(store)
         self.lock = asyncio.Lock()
         self.checkin_lock = asyncio.Lock()
         self.last_check_at = None

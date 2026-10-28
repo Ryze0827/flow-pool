@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { CalendarCheck, ChevronDown, ChevronLeft, ChevronRight, Clock3, Copy, MoonStar, Pencil, Plus, RefreshCw, Save, Trash2, UserMinus, Users, X } from 'lucide-vue-next'
+import { CalendarCheck, ChevronDown, ChevronLeft, ChevronRight, Clock3, Copy, MoonStar, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2, UserMinus, Users, X } from 'lucide-vue-next'
+import QuotaRefunds from './QuotaRefunds.vue'
 import { api } from './api'
 import { useRefreshCountdown } from './refreshCountdown'
 
@@ -368,13 +369,14 @@ onUnmounted(() => {
 <template>
   <div class="promotion-campaigns">
     <header class="promotion-heading">
-      <div><h1>促销活动</h1><p>管理促销活动关联的 GPT / OpenAI 分组状态。</p></div>
+      <div><h1>促销活动</h1><p>管理每日签到、夜间福利与用户消费额度返还。</p></div>
       <button class="button" :disabled="busy" @click="load"><RefreshCw :size="15" :class="{ spinning: loading }"/>刷新数据<span class="mobile-full-copy"> · <span class="refresh-countdown">{{ refreshCountdownText }}</span></span></button>
     </header>
 
     <p v-if="error" class="notice error" role="alert">{{ error }}</p>
 
     <nav class="promotion-tabs" role="tablist" aria-label="促销活动类型">
+      <button type="button" class="promotion-tab" :class="{ active: activeTab === 'refund' }" role="tab" aria-controls="refund-panel" :aria-selected="activeTab === 'refund'" @click="selectTab('refund')"><RotateCcw :size="16"/>额度返还</button>
       <button type="button" class="promotion-tab" :class="{ active: activeTab === 'checkin' }" role="tab" aria-controls="checkin-panel" :aria-selected="activeTab === 'checkin'" @click="selectTab('checkin')"><CalendarCheck :size="16"/>每日签到</button>
       <button type="button" class="promotion-tab" :class="{ active: activeTab === 'welfare' }" role="tab" aria-controls="welfare-panel" :aria-selected="activeTab === 'welfare'" @click="selectTab('welfare')"><MoonStar :size="16"/>夜间福利分组<span v-if="groups.length" class="promotion-tab-count">{{ groups.length }}</span></button>
     </nav>
@@ -421,7 +423,7 @@ onUnmounted(() => {
       </dialog>
     </section>
 
-    <section v-else id="welfare-panel" class="panel welfare-panel" aria-labelledby="welfare-title" role="tabpanel">
+    <section v-else-if="activeTab === 'welfare'" id="welfare-panel" class="panel welfare-panel" aria-labelledby="welfare-title" role="tabpanel">
       <div class="welfare-heading">
         <div class="welfare-icon"><MoonStar :size="21"/></div>
         <div><h2 id="welfare-title">夜间福利分组</h2><p>名称中包含“福利”的 OpenAI 平台分组，开关直接对应分组的启用状态。</p></div>
@@ -474,6 +476,8 @@ onUnmounted(() => {
       </div>
       <p v-else class="welfare-empty" role="status">{{ loading ? '正在读取福利分组…' : '没有名称中包含“福利”的 OpenAI 平台分组。' }}</p>
     </section>
+
+    <KeepAlive><QuotaRefunds v-if="activeTab === 'refund'" @notify="emit('notify', $event)"/></KeepAlive>
 
     <dialog ref="removeDialog" class="modal welfare-remove-dialog" aria-labelledby="welfare-remove-title" @cancel="removing && $event.preventDefault()">
       <template v-if="removeTarget">

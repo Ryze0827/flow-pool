@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
@@ -55,6 +56,23 @@ class PoolSchedulingRequest(BaseModel):
 
 
 GroupId = Annotated[int, Field(strict=True, ge=1, le=9223372036854775807)]
+
+
+class QuotaRefundPreview(BaseModel):
+    user_ids: list[GroupId] = Field(default_factory=list, max_length=10000)
+    start_at: datetime
+    end_at: datetime
+
+    @model_validator(mode='after')
+    def valid_period(self):
+        if any(value.tzinfo is None or value.utcoffset() is None for value in (self.start_at, self.end_at)):
+            raise ValueError('时间必须包含时区')
+        self.start_at = self.start_at.astimezone(timezone.utc)
+        self.end_at = self.end_at.astimezone(timezone.utc)
+        if self.start_at >= self.end_at or self.end_at > datetime.now(timezone.utc):
+            raise ValueError('请选择已经结束的有效时间段')
+        self.user_ids = sorted(set(self.user_ids))
+        return self
 
 
 class AdvancedGroupsConfig(BaseModel):
