@@ -1,5 +1,6 @@
 """Shared Sub2API PostgreSQL access: encrypted settings and verified snapshots/writes."""
 import asyncio
+import hashlib
 import hmac
 import os
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -56,6 +57,26 @@ class Sub2Postgres:
         # Preserve all libpq options for legacy deployments until the UI configuration is saved.
         self.dsn = os.environ.get('FLOWPOOL_SUB2API_PG_DSN', '') if config is None and store.postgres_source() == 'environment' else ''
 
+    async def _verify_database_key(self, cursor):
+        """Verify both legacy and Sub2API 0.2.19+ scoped administrator keys."""
+        key = self.settings.admin_key
+        if key.startswith('adm_sc_'):
+            parts = key.split('_')
+            if len(parts) != 4 or parts[0] != 'adm' or parts[1] != 'sc' or len(parts[2]) != 24 or len(parts[3]) != 64:
+                return False
+            digest = hashlib.sha256(key.encode()).hexdigest()
+            await cursor.execute(
+                "SELECT 1 FROM scoped_admin_api_keys "
+                "WHERE id = %s AND key_hash = %s AND enabled = TRUE "
+                "AND revoked_at IS NULL AND deleted_at IS NULL "
+                "AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)",
+                (parts[2], digest))
+            return await cursor.fetchone() is not None
+        await cursor.execute("SELECT value FROM settings WHERE key = 'admin_api_key'")
+        value = await cursor.fetchone()
+        return bool(value and isinstance(value['value'], str) and
+                    hmac.compare_digest(value['value'].encode(), key.encode()))
+
     @asynccontextmanager
     async def snapshot(self):
         value = self.config
@@ -84,16 +105,16 @@ class Sub2Postgres:
                 async with conn.transaction():
                     async with conn.cursor() as cursor:
                         await cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
-                        await cursor.execute("SELECT value FROM settings WHERE key = 'admin_api_key'")
-                        key = await cursor.fetchone()
-                        if not key or not isinstance(key['value'], str) or not hmac.compare_digest(key['value'].encode(), self.settings.admin_key.encode()):
+                        if not await self._verify_database_key(cursor):
                             raise HTTPException(409, '数据库与配置的 Sub2API 管理员 Key 不匹配，请检查是否为同一后端')
                         await cursor.execute('SELECT pg_is_in_recovery() AS is_replica')
                         if (await cursor.fetchone())['is_replica']:
                             raise HTTPException(409, '请连接 Sub2API PostgreSQL 主库，以便及时复核接口写入结果')
                         if not scope or identity not in scope['verified']:
                             async with Sub2API(self.settings) as client:
-                                await client.request('GET', 'settings/admin-api-key')
+                                # 新版 Sub2API 禁止 API Key 访问旧的密钥管理接口；
+                                # 使用 FlowPool 必需的分组读取权限验证 HTTP 后端。
+                                await client.request('GET', 'groups', params={'page': 1, 'page_size': 1})
                             if scope:
                                 scope['verified'].add(identity)
                         yield cursor
@@ -117,9 +138,7 @@ class Sub2Postgres:
                     autocommit=False, options=f'-c statement_timeout={value.statement_timeout * 1000}') as conn:
                 async with conn.transaction():
                     async with conn.cursor() as cursor:
-                        await cursor.execute("SELECT value FROM settings WHERE key = 'admin_api_key'")
-                        key = await cursor.fetchone()
-                        if not key or not isinstance(key['value'], str) or not hmac.compare_digest(key['value'].encode(), self.settings.admin_key.encode()):
+                        if not await self._verify_database_key(cursor):
                             raise HTTPException(409, '数据库与配置的 Sub2API 管理员 Key 不匹配，请检查是否为同一后端')
                         await cursor.execute('SELECT pg_is_in_recovery() AS is_replica')
                         if (await cursor.fetchone())['is_replica']:
