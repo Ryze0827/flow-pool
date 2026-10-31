@@ -67,10 +67,11 @@ def unavailable_reason(account, now):
 
 
 class Sub2API:
-    def __init__(self, settings):
+    def __init__(self, settings, access_token=''):
         if not settings.base_url or not settings.admin_key:
             raise UpstreamError('请先配置 Sub2API 地址和管理员 API Key', 400)
-        self.http = httpx.AsyncClient(base_url=settings.base_url + '/api/v1/admin/', headers={'X-API-Key': settings.admin_key}, timeout=30, follow_redirects=False, trust_env=False)
+        headers = {'Authorization': 'Bearer ' + access_token} if access_token else {'X-API-Key': settings.admin_key}
+        self.http = httpx.AsyncClient(base_url=settings.base_url + '/api/v1/admin/', headers=headers, timeout=30, follow_redirects=False, trust_env=False)
         self.clock_offset = 0
 
     async def __aenter__(self):

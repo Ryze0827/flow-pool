@@ -96,6 +96,19 @@ class UpstreamAuth:
         return bool(token and self.store.db.execute('SELECT 1 FROM upstream_sessions WHERE token_hash=? AND expires_at>?',
                                                    (session_digest(token), time.time())).fetchone())
 
+    def access_token(self, token):
+        """Return the refreshed admin JWT already checked by request middleware."""
+        if not token:
+            return ''
+        row = self.store.db.execute('SELECT payload FROM upstream_sessions WHERE token_hash=? AND expires_at>?',
+                                    (session_digest(token), time.time())).fetchone()
+        if not row:
+            return ''
+        payload = self.store.unseal(row['payload'])
+        if payload.get('base_url') != self.store.settings().base_url:
+            return ''
+        return payload.get('access_token') or ''
+
     async def session(self, token):
         if not token:
             return None

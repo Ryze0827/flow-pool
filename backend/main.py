@@ -322,7 +322,8 @@ async def inspect_rates(request: Request):
 
 @app.post('/api/rate-inspection/correct')
 async def correct_rates(value: RateCorrectionRequest, request: Request):
-    return await rate_inspection.correct(value.inspection_id, value.row_ids, request.state.admin['id'])
+    access_token = upstream_auth.access_token(request.cookies.get('flowpool_session'))
+    return await rate_inspection.correct(value.inspection_id, value.row_ids, request.state.admin['id'], access_token)
 
 
 @app.post('/api/rate-inspection/adjust')

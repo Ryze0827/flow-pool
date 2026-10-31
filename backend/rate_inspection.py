@@ -417,7 +417,7 @@ class RateInspection:
             self.store.db.commit()
             return {**result, 'inspection_id': inspection_id}
 
-    async def correct(self, inspection_id, row_ids, owner_id):
+    async def correct(self, inspection_id, row_ids, owner_id, access_token=''):
         if self.lock.locked():
             raise HTTPException(409, '正在巡检或纠正，请稍后重试')
         async with self.lock:
@@ -451,7 +451,10 @@ class RateInspection:
             for row in selected:
                 grouped[row['user_id']].append(row)
             results = []
-            async with Sub2API(self.store.settings()) as client:
+            # Restricted admin API keys are intentionally read-scoped. Use the
+            # current Sub2API admin JWT for the user-rate write, while all
+            # snapshots and post-write verification continue using the API key.
+            async with Sub2API(self.store.settings(), access_token=access_token) as client:
                 async def update_user(user_id, rows):
                     error = ''
                     try:
