@@ -230,8 +230,11 @@ class RateInspection:
 
     async def verify_backend(self):
         # Validate the same key against HTTP as against PostgreSQL; no user pagination.
+        # Sub2API 0.2.19+ forbids API-Key access to settings/admin-api-key;
+        # groups is a read-only endpoint required by this feature and works with
+        # both legacy full-access keys and scoped keys granted groups.read.
         async with Sub2API(self.store.settings()) as client:
-            await client.request('GET', 'settings/admin-api-key')
+            await client.request('GET', 'groups', params={'page': 1, 'page_size': 1})
 
     @staticmethod
     def adjusted_rate(current, value, operation, unit):
