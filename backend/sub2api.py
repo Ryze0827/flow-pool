@@ -29,7 +29,7 @@ def public_account(account):
     result = {key: account.get(key) for key in keys}
     result['groups'] = [{'id': group['id'], 'name': group['name']} for group in account.get('groups', []) or []]
     credentials = account.get('credentials') if isinstance(account.get('credentials'), dict) else {}
-    plan_type = credentials.get('plan_type') or credentials.get('chatgpt_plan_type')
+    plan_type = credentials.get('plan_type') or credentials.get('chatgpt_plan_type') or account.get('plan_type')
     if isinstance(plan_type, str) and plan_type.strip():
         result['plan_type'] = plan_type.strip().casefold()
     # 只保留额度快照字段，避免透传 extra 中无关或敏感配置。

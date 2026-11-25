@@ -12,12 +12,13 @@ const planType = computed(() => String(props.account.remote.plan_type || '').tri
 const windows = computed(() => ['5h', '7d'].filter(window => window !== '5h' || planType.value === 'plus').map(window => {
   const extra = props.account.remote.extra || {}
   const raw = extra[`codex_${window}_used_percent`]
-  const used = raw == null || raw === '' ? NaN : Number(raw)
+  const used = typeof raw === 'number' || (typeof raw === 'string' && raw.trim()) ? Number(raw) : NaN
   const seconds = Number(extra[`codex_${window}_reset_after_seconds`])
   const reset = stamp(extra[`codex_${window}_reset_at`]) || (updated.value && Number.isFinite(seconds) && seconds > 0 ? updated.value + seconds : null)
-  const usedPercent = Number.isFinite(used) && used >= 0 ? Math.min(used, 100) : 0
-  return { label: window === '5h' ? '5 小时' : '7 天', used: usedPercent, hasSnapshot: Number.isFinite(used) && used >= 0, remaining: 100 - usedPercent, reset }
+  const remaining = Number.isFinite(used) && used >= 0 ? 100 - Math.min(used, 100) : null
+  return { label: window === '5h' ? '5 小时' : '7 天', remaining, reset }
 }))
+const hasData = computed(() => windows.value.some(window => window.remaining !== null))
 const dateText = value => new Date(value * 1000).toLocaleString('zh-CN', { hour12: false })
 function resetText(reset) {
   if (!reset) return '重置时间未知'
@@ -30,11 +31,11 @@ function resetText(reset) {
 
 <template>
   <div :class="['quota-cell', { 'quota-compact': compact }]">
-    <template v-if="windows.length">
+    <template v-if="hasData">
       <div v-for="window in windows" :key="window.label" class="quota-window">
-        <span>{{ window.label }} · 剩余 {{ Number(window.remaining.toFixed(1)) }}%<small v-if="!window.hasSnapshot" class="quota-default">默认满额</small></span>
-        <a-progress class="quota-progress" :percent="window.remaining" :show-info="false" :stroke-color="window.remaining <= 0 ? '#ff4d4f' : window.remaining <= 10 ? '#faad14' : '#16a085'" size="small" />
-        <small v-if="!compact" :title="window.reset ? dateText(window.reset) : ''">{{ resetText(window.reset) }}</small>
+        <span>{{ window.label }} · {{ window.remaining === null ? '暂无数据' : `剩余 ${Number(window.remaining.toFixed(1))}%` }}</span>
+        <a-progress v-if="window.remaining !== null" class="quota-progress" :percent="window.remaining" :show-info="false" :stroke-color="window.remaining <= 0 ? '#ff4d4f' : window.remaining <= 10 ? '#faad14' : '#16a085'" size="small" />
+        <small v-if="!compact && window.remaining !== null" :title="window.reset ? dateText(window.reset) : ''">{{ resetText(window.reset) }}</small>
       </div>
       <small v-if="!compact" :title="updated ? dateText(updated) : ''">{{ updated ? `快照 ${dateText(updated)}` : '快照时间未知' }}</small>
     </template>
@@ -54,7 +55,6 @@ function resetText(reset) {
 .quota-progress { display: block; width: 100%; margin-top: 5px; line-height: 1; }
 .quota-progress :deep(.ant-progress-outer) { width: 100%; }
 .quota-progress :deep(.ant-progress-inner) { background: #edf1f6; }
-.quota-default { display: inline !important; margin-left: 4px; }
 .quota-compact { min-width: 0; font-size: 11px; }
 .quota-compact .quota-window > span { display: block; overflow-wrap: anywhere; }
 .quota-compact .quota-window + .quota-window { margin-top: 5px; }
